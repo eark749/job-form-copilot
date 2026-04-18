@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Application Test Form</title>
+    <style>
+        :root {
+            --primary: #0d7a5f;
+            --primary-hover: #0f5e48;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            margin: 0;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--primary);
+        }
+
+        p.subtitle {
+            color: #64748b;
+            margin-bottom: 32px;
+        }
+
+        section {
+            margin-bottom: 32px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        section:last-child {
+            border-bottom: none;
+        }
+
+        h2 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .field-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 6px;
+        }
+
+        input[type="text"],
+        input[type="email"],
+        input[type="tel"],
+        input[type="url"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            box-sizing: border-box;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(13, 122, 95, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        button.submit-btn {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button.submit-btn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        /* Helper text for the user */
+        .helper-box {
+            background: #f1f5f9;
+            border-left: 4px solid var(--primary);
+            padding: 16px;
+            margin-bottom: 32px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Engineering Role Application</h1>
+    <p class="subtitle">Complete the form below to test the AI Assistant's capabilities.</p>
+
+    <div class="helper-box">
+        <strong>How to test:</strong>
+        <ol>
+            <li>Make sure the extension is enabled and you have uploaded your resume.</li>
+            <li>Click into any field to see suggestion variants (Concise/Balanced/Detailed).</li>
+            <li>Click the floating <strong>✨ Auto-fill</strong> button in the bottom right to fill all empty fields at once.</li>
+        </ol>
+    </div>
+
+    <form id="test-form">
+        <!-- Personal Information -->
+        <section>
+            <h2>Personal Information</h2>
+            <div class="row">
+                <div class="field-group">
+                    <label for="full-name">Full Name</label>
+                    <input type="text" id="full-name" name="name" placeholder="E.g. John Doe">
+                </div>
+                <div class="field-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" name="email" placeholder="john@example.com">
+                </div>
+            </div>
+            <div class="row">
+                <div class="field-group">
+                    <label for="phone">Phone Number</label>
+                    <input type="tel" id="phone" name="phone" placeholder="+1 (555) 000-0000">
+                </div>
+                <div class="field-group">
+                    <label for="location">Current Location</label>
+                    <input type="text" id="location" name="location" placeholder="City, Country">
+                </div>
+            </div>
+            <div class="field-group">
+                <label for="linkedin">LinkedIn Profile</label>
+                <input type="url" id="linkedin" name="linkedin" placeholder="https://linkedin.com/in/username">
+            </div>
+        </section>
+
+        <!-- Work experience summary -->
+        <section>
+            <h2>Experience & Skills</h2>
+            <div class="field-group">
+                <label for="years-exp">Years of Experience</label>
+                <select id="years-exp" name="years_experience">
+                    <option value="">Select an option</option>
+                    <option value="0-1">0-1 years</option>
+                    <option value="2-4">2-4 years</option>
+                    <option value="5-8">5-8 years</option>
+                    <option value="8+">8+ years</option>
+                </select>
+            </div>
+            <div class="field-group">
+                <label for="summary">Professional Summary</label>
+                <textarea id="summary" name="summary" placeholder="Briefly describe your background..."></textarea>
+            </div>
+            <div class="field-group">
+                <label for="key-skills">Top 3 Technical Skills</label>
+                <input type="text" id="key-skills" name="skills" placeholder="E.g. React, Node.js, AWS">
+            </div>
+        </section>
+
+        <!-- Tricky "Memory" Style Questions -->
+        <section>
+            <h2>Questions</h2>
+            <div class="field-group">
+                <label for="complex-project">What is the most complex technical system you have built? Please describe the architecture and your role.</label>
+                <textarea id="complex-project" name="complex_project_description" placeholder="Describe your architecture here..."></textarea>
+            </div>
+            <div class="field-group">
+                <label for="failure-story">Tell us about a time you faced a major technical challenge or failure. How did you resolve it?</label>
+                <textarea id="failure-story" name="failure_resolution" placeholder="What happened and how did you fix it?"></textarea>
+            </div>
+            <div class="field-group">
+                <label for="why-role">Why are you interested in this role and company specifically?</label>
+                <textarea id="why-role" name="motivation" placeholder="Your interest in this position..."></textarea>
+            </div>
+        </section>
+
+        <button type="submit" class="submit-btn" onclick="event.preventDefault(); alert('Form submitted! (In a real scenario, this would trigger history storage and Telegram summary)');">Submit Application</button>
+    </form>
+</div>
+
+</body>
+</html>
