@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Job Form AI Assistant",
+  "version": "0.1.0",
+  "description": "Suggests resume-based answers while filling job applications.",
+  "permissions": ["storage"],
+  "host_permissions": ["<all_urls>", "https://api.openai.com/*", "https://api.mistral.ai/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Job Form AI Assistant"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": true
+    }
+  ]
+}

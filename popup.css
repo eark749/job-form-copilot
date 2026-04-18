@@ -1,0 +1,145 @@
+:root {
+  color-scheme: light;
+  font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+  --bg: #f1f7f6;
+  --ink: #112228;
+  --muted: #50656b;
+  --card: #ffffff;
+  --line: #d5e4df;
+  --accent: #0f7666;
+  --accent-2: #0b5f52;
+  --soft: #e7f4f1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  width: 420px;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 8% -15%, #bce8de 0%, transparent 45%),
+    radial-gradient(circle at 100% 0%, #d8f0ea 0%, transparent 35%),
+    var(--bg);
+}
+
+.card {
+  margin: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 16px 38px rgba(7, 50, 44, 0.14);
+}
+
+.hero {
+  padding: 6px 4px 12px;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+h1 {
+  margin: 4px 0 8px;
+  font-size: 20px;
+  line-height: 1.18;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.section {
+  margin: 12px 0;
+}
+
+label {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+textarea,
+input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px;
+  font-size: 12px;
+  color: var(--ink);
+  background: #ffffff;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 130px;
+}
+
+button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary {
+  width: 100%;
+  margin-top: 6px;
+  color: #ffffff;
+  background: linear-gradient(140deg, var(--accent) 0%, #12907d 100%);
+}
+
+.primary:hover {
+  background: linear-gradient(140deg, var(--accent-2) 0%, #0f7f6f 100%);
+}
+
+.secondary {
+  color: var(--accent);
+  background: var(--soft);
+  border: 1px solid #c8ddd7;
+}
+
+.secondary:hover {
+  background: #ddf0ec;
+}
+
+.tiny {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#status {
+  min-height: 18px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0a7f38;
+}
