@@ -2,6 +2,7 @@ const resumeTextEl = document.getElementById("resumeText");
 const apiKeyEl = document.getElementById("apiKey");
 const modelEl = document.getElementById("model");
 const mistralApiKeyEl = document.getElementById("mistralApiKey");
+const assistantEnabledEl = document.getElementById("assistantEnabled");
 const saveBtn = document.getElementById("saveBtn");
 const statusEl = document.getElementById("status");
 const resumeFileEl = document.getElementById("resumeFile");
@@ -250,12 +251,14 @@ async function loadSettings() {
     "openaiApiKey",
     "openaiModel",
     "mistralApiKey",
-    "resumePdfName"
+    "resumePdfName",
+    "assistantEnabled"
   ]);
   resumeTextEl.value = stored.resumeText || "";
   apiKeyEl.value = stored.openaiApiKey || (await loadOpenAIKeyFromEnv()) || "";
   modelEl.value = stored.openaiModel || "gpt-4o-mini";
   mistralApiKeyEl.value = stored.mistralApiKey || (await loadMistralKeyFromEnv()) || "";
+  assistantEnabledEl.checked = stored.assistantEnabled !== false;
   pdfMetaEl.textContent = stored.resumePdfName ? `Last PDF: ${stored.resumePdfName}` : "No PDF selected.";
 }
 
@@ -265,10 +268,22 @@ async function saveSettings() {
   const openaiModel = modelEl.value.trim() || "gpt-4o-mini";
   const mistralApiKey = mistralApiKeyEl.value.trim();
   const resumePdfName = resumeFileEl.files?.[0]?.name || "";
+  const assistantEnabled = assistantEnabledEl.checked;
 
-  await chrome.storage.local.set({ resumeText, openaiApiKey, openaiModel, mistralApiKey, resumePdfName });
+  await chrome.storage.local.set({ resumeText, openaiApiKey, openaiModel, mistralApiKey, resumePdfName, assistantEnabled });
   setStatus("Saved. Suggestions are ready on job forms.");
 }
+
+assistantEnabledEl.addEventListener("change", async () => {
+  const assistantEnabled = assistantEnabledEl.checked;
+  try {
+    await chrome.storage.local.set({ assistantEnabled });
+    setStatus(assistantEnabled ? "Assistant is ON." : "Assistant is OFF.");
+  } catch (error) {
+    console.error(error);
+    setStatus("Failed to update assistant toggle.", true);
+  }
+});
 
 resumeFileEl.addEventListener("change", () => {
   const file = resumeFileEl.files?.[0];

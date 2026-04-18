@@ -9,6 +9,7 @@ const SYSTEM_PROMPT = [
 
 const tabStateById = new Map();
 let envKeysCache = null;
+const OPENAI_TIMEOUT_MS = 20000;
 
 function getTabState(tabId) {
   if (!tabStateById.has(tabId)) {
@@ -182,7 +183,17 @@ async function extractResumeTextWithOpenAI(apiKey, model, fileName, pdfDataUrl) 
   return text;
 }
 
-async function generateWithOpenAI(apiKey, model, resumeText, context, tabHistory) {
+function sendProgressToTab(tabId, requestId, stage, detail) {
+  if (typeof tabId !== "number" || tabId < 0) return;
+  chrome.tabs?.sendMessage(tabId, {
+    type: "SUGGESTION_STREAM_PROGRESS",
+    requestId,
+    stage,
+    detail: String(detail || "")
+  });
+}
+
+async function generateWithOpenAINonStream(apiKey, model, resumeText, context, tabHistory) {
   const userPrompt = {
     resume: resumeText,
     fieldContext: context,
@@ -243,6 +254,152 @@ async function generateWithOpenAI(apiKey, model, resumeText, context, tabHistory
   return payload;
 }
 
+async function generateWithOpenAI(apiKey, model, resumeText, context, tabHistory, onProgress) {
+  const userPrompt = {
+    resume: resumeText,
+    fieldContext: context,
+    recentQuestionsInThisBrowserTab: tabHistory,
+    instructions: [
+      "Generate suggestions for this single field only.",
+      "Avoid repeating nearly identical text across the 3 variants.",
+      "No markdown, no numbering, no extra keys.",
+      "Return JSON object exactly: { concise: string[], balanced: string[], detailed: string[] }."
+    ]
+  };
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort("timeout"), OPENAI_TIMEOUT_MS);
+  let done = false;
+  let streamText = "";
+  let buffer = "";
+  let lastProgressAt = 0;
+
+  try {
+    console.log("[JobFormAI] OpenAI stream start", {
+      model,
+      resumeChars: String(resumeText || "").length,
+      field: context?.fieldLabel || context?.placeholder || context?.name || "unknown"
+    });
+    onProgress("queued", "Sending request to OpenAI...");
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model,
+        stream: true,
+        input: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: JSON.stringify(userPrompt) }
+        ],
+        max_output_tokens: 900,
+        temperature: 0.45
+      }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`OpenAI error: ${response.status} ${errText}`);
+    }
+
+    if (!response.body) {
+      throw new Error("OpenAI stream body missing.");
+    }
+
+    onProgress("in_progress", "OpenAI stream connected. Generating...");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (!done) {
+      const { value, done: readerDone } = await reader.read();
+      if (readerDone) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let nlIdx;
+      while ((nlIdx = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nlIdx).trim();
+        buffer = buffer.slice(nlIdx + 1);
+        if (!line || !line.startsWith("data:")) continue;
+
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+
+        let event;
+        try {
+          event = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+
+        if (event.type === "error") {
+          throw new Error(event.error?.message || "OpenAI stream error.");
+        }
+
+        if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
+          streamText += event.delta;
+        }
+
+        if (event.type === "response.completed") {
+          done = true;
+          const finalOutputText = event.response?.output_text;
+          if (typeof finalOutputText === "string" && finalOutputText.trim()) {
+            streamText = finalOutputText;
+          }
+        }
+
+        const now = Date.now();
+        if (now - lastProgressAt > 300) {
+          const tail = streamText.slice(-120).replace(/\s+/g, " ").trim();
+          onProgress("in_progress", tail ? `Streaming... ${tail}` : "Streaming...");
+          lastProgressAt = now;
+        }
+      }
+    }
+
+    clearTimeout(timeoutId);
+    const text = streamText.trim();
+    if (!text) {
+      onProgress("in_progress", "No streamed text yet, retrying parse...");
+      return generateWithOpenAINonStream(apiKey, model, resumeText, context, tabHistory);
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      onProgress("in_progress", "Stream parse fallback...");
+      return generateWithOpenAINonStream(apiKey, model, resumeText, context, tabHistory);
+    }
+
+    const payload = {
+      concise: toStringArray(parsed.concise),
+      balanced: toStringArray(parsed.balanced),
+      detailed: toStringArray(parsed.detailed)
+    };
+
+    if (!payload.concise.length || !payload.balanced.length || !payload.detailed.length) {
+      onProgress("in_progress", "Stream schema fallback...");
+      return generateWithOpenAINonStream(apiKey, model, resumeText, context, tabHistory);
+    }
+
+    console.log("[JobFormAI] OpenAI stream success", {
+      concise: payload.concise.length,
+      balanced: payload.balanced.length,
+      detailed: payload.detailed.length
+    });
+    return payload;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (String(error?.name || "").toLowerCase() === "aborterror" || String(error).includes("timeout")) {
+      throw new Error(`OpenAI request timed out after ${OPENAI_TIMEOUT_MS / 1000}s.`);
+    }
+    throw error;
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "EXTRACT_RESUME_FROM_PDF") {
     (async () => {
@@ -279,11 +436,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   (async () => {
-    const { resumeText, openaiApiKey, openaiModel } = await chrome.storage.local.get([
+    const { resumeText, openaiApiKey, openaiModel, assistantEnabled } = await chrome.storage.local.get([
       "resumeText",
       "openaiApiKey",
-      "openaiModel"
+      "openaiModel",
+      "assistantEnabled"
     ]);
+    if (assistantEnabled === false) {
+      sendResponse({ ok: false, error: "Assistant is OFF. Turn it ON from extension popup." });
+      return;
+    }
     const envKeys = await loadEnvKeys();
     const effectiveOpenAIKey = String(openaiApiKey || envKeys.OPENAI_API_KEY || "").trim();
 
@@ -297,7 +459,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     const context = message.context || {};
     const tabId = typeof sender?.tab?.id === "number" ? sender.tab.id : -1;
+    const requestId = Number(message.requestId || 0);
     const tabHistory = getTabState(tabId).history;
+    console.log("[JobFormAI] GENERATE_SUGGESTIONS request", {
+      requestId,
+      tabId,
+      hasResume: Boolean(resumeText && resumeText.trim().length >= 50),
+      hasOpenAIKey: Boolean(effectiveOpenAIKey),
+      field: context?.fieldLabel || context?.placeholder || context?.name || "unknown"
+    });
 
     if (!effectiveOpenAIKey) {
       const payload = fallbackSuggestions(context);
@@ -311,23 +481,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     try {
+      sendProgressToTab(tabId, requestId, "start", "Preparing prompt and context...");
       const payload = await generateWithOpenAI(
         effectiveOpenAIKey,
         openaiModel || "gpt-4o-mini",
         resumeText,
         context,
-        tabHistory
+        tabHistory,
+        (stage, detail) => sendProgressToTab(tabId, requestId, stage, detail)
       );
+      sendProgressToTab(tabId, requestId, "done", "Suggestions ready.");
       pushTabHistory(tabId, context, payload);
       sendResponse({ ok: true, variants: payload });
     } catch (error) {
       console.error(error);
+      sendProgressToTab(tabId, requestId, "error", String(error?.message || "Unknown error"));
       const payload = fallbackSuggestions(context);
       pushTabHistory(tabId, context, payload);
       sendResponse({
         ok: true,
         variants: payload,
-        warning: "AI request failed. Showing fallback suggestions."
+        warning: `AI request failed (${String(error?.message || "unknown")}). Showing fallback suggestions.`
       });
     }
   })();

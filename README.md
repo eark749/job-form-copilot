@@ -8,6 +8,7 @@ When you click a question field, it shows resume-based AI suggestions directly u
 - Local PDF text extraction (for text-based PDFs).
 - OCR fallback extraction for difficult/scanned PDFs now uses Mistral OCR.
 - Better UI in popup and in-page suggestion card.
+- Assistant ON/OFF toggle to pause auto-requests on every form input.
 - Suggestion style tabs: `Concise`, `Balanced`, `Detailed`.
 - Per-browser-tab question history context so each tab's flow stays separate.
 

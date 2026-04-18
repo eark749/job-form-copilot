@@ -1,9 +1,15 @@
 const PANEL_ID = "job-form-ai-assistant-panel";
+const LOADING_ID = "job-form-ai-assistant-loading";
 
 let activeElement = null;
 let requestCounter = 0;
 let activeTone = "balanced";
 const boundRoots = new WeakSet();
+let assistantEnabled = false;
+let assistantStateLoaded = false;
+let assistantStateLastSyncMs = 0;
+const ASSISTANT_SYNC_TTL_MS = 1200;
+const REQUEST_TIMEOUT_MS = 22000;
 
 function isSupportedField(el) {
   if (!el || !(el instanceof Element)) return false;
@@ -207,10 +213,27 @@ function createSuggestionButton(text) {
 function renderPanelLoading(panel) {
   panel.innerHTML = "";
   const box = document.createElement("div");
+  box.id = LOADING_ID;
   box.style.fontSize = "12px";
   box.style.color = "#2e6168";
   box.innerText = "Crafting suggestions for this question...";
   panel.appendChild(box);
+}
+
+function updateLoadingText(message) {
+  const node = document.getElementById(LOADING_ID);
+  if (!node) return;
+  node.innerText = message;
+}
+
+async function refreshAssistantEnabledIfNeeded(force = false) {
+  if (!globalThis.chrome?.storage?.local) return;
+  const now = Date.now();
+  if (!force && assistantStateLoaded && now - assistantStateLastSyncMs < ASSISTANT_SYNC_TTL_MS) return;
+  const stored = await chrome.storage.local.get(["assistantEnabled"]);
+  assistantEnabled = stored.assistantEnabled !== false;
+  assistantStateLoaded = true;
+  assistantStateLastSyncMs = now;
 }
 
 function renderPanelError(panel, message) {
@@ -290,7 +313,12 @@ function renderPanelWithVariants(panel, variants, warning) {
   paintList();
 }
 
-function requestSuggestions(el) {
+async function requestSuggestions(el) {
+  await refreshAssistantEnabledIfNeeded();
+  if (!assistantStateLoaded || !assistantEnabled) {
+    hidePanel();
+    return;
+  }
   const panel = getOrCreatePanel();
   activeElement = el;
   positionPanel(panel, el);
@@ -300,14 +328,30 @@ function requestSuggestions(el) {
   renderPanelLoading(panel);
 
   const context = buildContext(el);
+  console.log("[JobFormAI] sending field context", {
+    requestId,
+    field: context.fieldLabel || context.placeholder || context.name || "unknown",
+    fieldType: context.fieldType,
+    url: context.url
+  });
 
   if (!globalThis.chrome || !chrome.runtime || typeof chrome.runtime.sendMessage !== "function") {
     renderPanelError(panel, "Extension runtime unavailable on this page. Try a job application tab.");
     return;
   }
 
-  chrome.runtime.sendMessage({ type: "GENERATE_SUGGESTIONS", context }, (response) => {
+  const timeoutId = setTimeout(() => {
     if (requestId !== requestCounter) return;
+    renderPanelError(panel, "Timed out waiting for assistant response. Try again.");
+  }, REQUEST_TIMEOUT_MS);
+
+  chrome.runtime.sendMessage({ type: "GENERATE_SUGGESTIONS", context, requestId }, (response) => {
+    clearTimeout(timeoutId);
+    if (requestId !== requestCounter) return;
+    if (!assistantEnabled) {
+      hidePanel();
+      return;
+    }
 
     if (chrome.runtime.lastError) {
       renderPanelError(panel, `Extension messaging error: ${chrome.runtime.lastError.message}`);
@@ -320,6 +364,13 @@ function requestSuggestions(el) {
     }
 
     const variants = response.variants || {};
+    console.log("[JobFormAI] received suggestions", {
+      requestId,
+      concise: Array.isArray(variants.concise) ? variants.concise.length : 0,
+      balanced: Array.isArray(variants.balanced) ? variants.balanced.length : 0,
+      detailed: Array.isArray(variants.detailed) ? variants.detailed.length : 0,
+      warning: response.warning || ""
+    });
     renderPanelWithVariants(panel, variants, response.warning || "");
   });
 }
@@ -329,7 +380,9 @@ function onFocusLike(event) {
   const target = rawTarget instanceof Element ? rawTarget : null;
   if (!target || !isSupportedField(target)) return;
   if (target === activeElement) return;
-  requestSuggestions(target);
+  requestSuggestions(target).catch((error) => {
+    console.error("[JobFormAI] requestSuggestions failed", error);
+  });
 }
 
 function onPointerDown(event) {
@@ -348,7 +401,6 @@ function bindRootListeners(root) {
   boundRoots.add(root);
 
   root.addEventListener("focusin", onFocusLike, true);
-  root.addEventListener("click", onFocusLike, true);
   root.addEventListener("mousedown", onPointerDown, true);
 }
 
@@ -374,6 +426,36 @@ function init() {
 
   bindRootListeners(document);
   bindOpenShadowRoots(document.documentElement);
+
+  if (globalThis.chrome?.storage?.local) {
+    refreshAssistantEnabledIfNeeded(true).catch((error) => {
+      console.error("[JobFormAI] assistant toggle load failed", error);
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local" || !Object.prototype.hasOwnProperty.call(changes, "assistantEnabled")) return;
+      assistantEnabled = changes.assistantEnabled.newValue !== false;
+      assistantStateLoaded = true;
+      assistantStateLastSyncMs = Date.now();
+      if (!assistantEnabled) {
+        // Invalidate in-flight callbacks and close any visible UI immediately.
+        requestCounter += 1;
+        hidePanel();
+      }
+    });
+  }
+
+  if (globalThis.chrome?.runtime?.onMessage) {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type !== "SUGGESTION_STREAM_PROGRESS") return false;
+      const incomingRequestId = Number(message.requestId || 0);
+      if (incomingRequestId !== requestCounter) return false;
+
+      const detail = String(message.detail || "");
+      if (!detail) return false;
+      updateLoadingText(detail);
+      return false;
+    });
+  }
 
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
