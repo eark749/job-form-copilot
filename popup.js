@@ -258,7 +258,7 @@ async function loadSettings() {
   apiKeyEl.value = stored.openaiApiKey || (await loadOpenAIKeyFromEnv()) || "";
   modelEl.value = stored.openaiModel || "gpt-4o-mini";
   mistralApiKeyEl.value = stored.mistralApiKey || (await loadMistralKeyFromEnv()) || "";
-  assistantEnabledEl.checked = stored.assistantEnabled !== false;
+  assistantEnabledEl.checked = stored.assistantEnabled === true;
   pdfMetaEl.textContent = stored.resumePdfName ? `Last PDF: ${stored.resumePdfName}` : "No PDF selected.";
 }
 

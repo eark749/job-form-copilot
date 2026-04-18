@@ -338,7 +338,7 @@ async function refreshAssistantEnabledIfNeeded(force = false) {
   const now = Date.now();
   if (!force && assistantStateLoaded && now - assistantStateLastSyncMs < ASSISTANT_SYNC_TTL_MS) return;
   const stored = await chrome.storage.local.get(["assistantEnabled"]);
-  assistantEnabled = stored.assistantEnabled !== false;
+  assistantEnabled = stored.assistantEnabled === true;
   assistantStateLoaded = true;
   assistantStateLastSyncMs = now;
 }
@@ -573,9 +573,17 @@ function injectAutoFillButton() {
   if (parent) {
     parent.appendChild(btn);
     console.log("[JobFormAI] Autofill button injected into", parent.tagName);
+    updateAutoFillButtonVisibility();
   } else {
     console.error("[JobFormAI] Could not find parent to inject button.");
   }
+}
+
+
+function updateAutoFillButtonVisibility() {
+  const btn = document.getElementById(AUTOFILL_BTN_ID);
+  if (!btn) return;
+  btn.style.setProperty("display", assistantEnabled ? "flex" : "none", "important");
 }
 
 
@@ -644,14 +652,17 @@ function init() {
 
 
   if (globalThis.chrome?.storage?.local) {
-    refreshAssistantEnabledIfNeeded(true).catch((error) => {
+    refreshAssistantEnabledIfNeeded(true).then(() => {
+        updateAutoFillButtonVisibility();
+    }).catch((error) => {
       console.error("[JobFormAI] assistant toggle load failed", error);
     });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local" || !Object.prototype.hasOwnProperty.call(changes, "assistantEnabled")) return;
-      assistantEnabled = changes.assistantEnabled.newValue !== false;
+      assistantEnabled = changes.assistantEnabled.newValue === true;
       assistantStateLoaded = true;
       assistantStateLastSyncMs = Date.now();
+      updateAutoFillButtonVisibility();
       if (!assistantEnabled) {
         requestCounter += 1;
         hidePanel();

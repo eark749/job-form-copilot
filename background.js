@@ -508,3 +508,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   return true;
 });
+
+/* ─────────────────────────────────────────────────────────────────
+   AUTO-INJECTION ON INSTALL/STARTUP
+───────────────────────────────────────────────────────────────── */
+chrome.runtime.onInstalled.addListener(() => {
+  injectIntoAllTabs();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  injectIntoAllTabs();
+});
+
+async function injectIntoAllTabs() {
+  const manifest = chrome.runtime.getManifest();
+  const contentScript = manifest.content_scripts[0];
+  if (!contentScript) return;
+
+  const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*", "file:///*"] });
+  for (const tab of tabs) {
+    if (!tab.url || tab.url.startsWith("chrome://") || tab.url.startsWith("edge://")) continue;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        files: contentScript.js
+      });
+      console.log(`[JobFormAI] Injected into tab ${tab.id}: ${tab.url}`);
+    } catch (err) {
+      // Ignored for restricted domains
+    }
+  }
+}
