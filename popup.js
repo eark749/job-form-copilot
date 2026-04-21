@@ -95,7 +95,10 @@ document.getElementById("nextToStep2").addEventListener("click", async () => {
   }
 });
 document.getElementById("backToStep1").addEventListener("click", () => showView("step1"));
-document.getElementById("nextToStep3").addEventListener("click", () => showView("step3"));
+document.getElementById("nextToStep3").addEventListener("click", async () => {
+  await saveSocialLinksOnly();
+  showView("step3");
+});
 document.getElementById("backToStep2").addEventListener("click", () => showView("step2"));
 
 document.getElementById("btnEditResume").addEventListener("click", () => showView("step1"));
@@ -252,6 +255,14 @@ async function saveAll() {
   setStatus("All settings saved!");
 }
 
+async function saveSocialLinksOnly() {
+  await chrome.storage.local.set({
+    linkedinUrl: linkedinUrlEl.value.trim(),
+    githubUrl: githubUrlEl.value.trim(),
+    twitterUrl: twitterUrlEl.value.trim()
+  });
+}
+
 document.getElementById("saveAll").addEventListener("click", saveAll);
 
 // Old extract listener removed - now automatic on Continue
@@ -259,6 +270,13 @@ document.getElementById("saveAll").addEventListener("click", saveAll);
 assistantEnabledEl.addEventListener("change", () => {
   chrome.storage.local.set({ assistantEnabled: assistantEnabledEl.checked });
   setStatus(assistantEnabledEl.checked ? "Assistant ON" : "Assistant OFF");
+});
+
+[linkedinUrlEl, githubUrlEl, twitterUrlEl].forEach((el) => {
+  if (!el) return;
+  el.addEventListener("change", () => {
+    saveSocialLinksOnly();
+  });
 });
 
 // Dropzone helper

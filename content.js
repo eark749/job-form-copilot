@@ -13,6 +13,7 @@ let assistantStateLastSyncMs = 0;
 const ASSISTANT_SYNC_TTL_MS = 1200;
 const REQUEST_TIMEOUT_MS = 22000;
 let isAutoFilling = false;
+let activePanelRequestId = 0;
 
 console.log("[JobFormAI] content.js loaded. Protocol:", location.protocol);
 
@@ -80,9 +81,93 @@ function getFieldValue(el) {
   return el.value || "";
 }
 
+function normalizeSpace(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function extractFirstRegex(text, regex) {
+  const match = String(text || "").match(regex);
+  return match?.[0] ? String(match[0]).trim() : "";
+}
+
+function looksNarrative(text) {
+  const value = normalizeSpace(text);
+  if (!value) return false;
+  return value.length > 90 && /\b(i|my|experience|background|worked|built|developed)\b/i.test(value);
+}
+
+function sanitizeValueForField(el, text, context = null) {
+  const raw = normalizeSpace(text);
+  if (!raw) return "";
+
+  const ctx = context || buildContext(el);
+  const fieldType = String(ctx.fieldType || "").toLowerCase();
+  const isUrlLike = ctx.isLinkedIn || ctx.isGitHub || ctx.isUrl || fieldType === "url";
+  const isEmailLike = ctx.isEmail || fieldType === "email";
+  const isPhoneLike = ctx.isPhone || fieldType === "tel";
+
+  if (isEmailLike) {
+    return extractFirstRegex(raw, /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  }
+
+  if (isUrlLike) {
+    const url = extractFirstRegex(raw, /https?:\/\/[^\s)>"']+/i);
+    if (url) return url;
+    if (ctx.isLinkedIn) {
+      const linkedinPath = extractFirstRegex(raw, /linkedin\.com\/[^\s)>"']+/i);
+      return linkedinPath ? `https://${linkedinPath.replace(/^https?:\/\//i, "")}` : "";
+    }
+    if (ctx.isGitHub) {
+      const githubPath = extractFirstRegex(raw, /github\.com\/[^\s)>"']+/i);
+      return githubPath ? `https://${githubPath.replace(/^https?:\/\//i, "")}` : "";
+    }
+  }
+
+  if (isPhoneLike) {
+    const compact = raw.replace(/[^\d+()\-\s]/g, "").trim();
+    const digits = compact.replace(/\D/g, "");
+    return digits.length >= 7 ? compact : "";
+  }
+
+  if ((ctx.isFirstName || ctx.isLastName || ctx.isNameLike || ctx.isLocationLike) && looksNarrative(raw)) {
+    return "";
+  }
+
+  return raw;
+}
+
+function pickBestSelectOption(el, suggestion) {
+  const search = normalizeSpace(suggestion).toLowerCase();
+  const options = Array.from(el.options || []);
+  if (!options.length || !search) return null;
+
+  const byExact = options.find((opt) => normalizeSpace(opt.text).toLowerCase() === search)
+    || options.find((opt) => normalizeSpace(opt.value).toLowerCase() === search);
+  if (byExact) return byExact;
+
+  const byContains = options.find((opt) => normalizeSpace(opt.text).toLowerCase().includes(search))
+    || options.find((opt) => search.includes(normalizeSpace(opt.text).toLowerCase()));
+  if (byContains) return byContains;
+
+  const suggestionTokens = search.split(/[^a-z0-9+]+/i).filter(Boolean);
+  let best = null;
+  let bestScore = 0;
+  for (const opt of options) {
+    const text = normalizeSpace(opt.text).toLowerCase();
+    if (!text) continue;
+    const score = suggestionTokens.reduce((acc, token) => (text.includes(token) ? acc + 1 : acc), 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = opt;
+    }
+  }
+  return bestScore > 0 ? best : null;
+}
+
 function setFieldValue(el, text, options = {}) {
   if (!el) return;
   const avoidFocus = options.avoidFocus === true;
+  const context = options.context || buildContext(el);
 
   if (String(text).includes("[MISSING_DATA]")) {
     showFieldNotification(el, "Not found in resume");
@@ -99,14 +184,11 @@ function setFieldValue(el, text, options = {}) {
   }
 
   if (el.tagName === "SELECT") {
-    const search = String(text).toLowerCase().trim();
-    const options = Array.from(el.options || []);
-    // Try exact match first, then partial match
-    const option = options.find((opt) => (opt.text || "").toLowerCase().trim() === search) 
-                 || options.find((opt) => (opt.text || "").toLowerCase().includes(search));
-    
+    const option = pickBestSelectOption(el, text);
+
     if (option) {
       el.value = option.value;
+      el.selectedIndex = Array.from(el.options).indexOf(option);
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
       el.dispatchEvent(new Event("blur", { bubbles: true }));
@@ -116,8 +198,14 @@ function setFieldValue(el, text, options = {}) {
     return;
   }
 
+  const sanitized = sanitizeValueForField(el, text, context);
+  if (!sanitized) {
+    showFieldNotification(el, "No valid value found");
+    return;
+  }
+
   if (!avoidFocus) el.focus();
-  el.value = text;
+  el.value = sanitized;
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
   el.dispatchEvent(new Event("blur", { bubbles: true }));
@@ -165,17 +253,39 @@ function buildContext(el) {
     maxLength: el.maxLength && el.maxLength > 0 ? el.maxLength : null,
     fieldLabel: findLabelText(el).trim(),
     nearbyQuestionText: findQuestionLikeText(el),
-    currentValue: getFieldValue(el).slice(0, 1200)
+    currentValue: getFieldValue(el).slice(0, 1200),
+    options:
+      el.tagName === "SELECT"
+        ? Array.from(el.options || [])
+            .map((opt) => String(opt.text || "").trim())
+            .filter(Boolean)
+            .slice(0, 80)
+        : []
   };
 
   const labelLower = ctx.fieldLabel.toLowerCase();
   const nameLower = ctx.name.toLowerCase();
   const idLower = ctx.id.toLowerCase();
+  const placeholderLower = ctx.placeholder.toLowerCase();
+  const joined = `${labelLower} ${nameLower} ${idLower} ${placeholderLower}`;
 
-  ctx.isFirstName = labelLower.includes("first") || nameLower.includes("first") || idLower.includes("first");
-  ctx.isLastName = labelLower.includes("last") || nameLower.includes("last") || idLower.includes("last");
-  ctx.isPhone = ctx.fieldType === "tel" || labelLower.includes("phone") || labelLower.includes("mobile");
-  ctx.isEmail = ctx.fieldType === "email" || labelLower.includes("email");
+  ctx.isFirstName = joined.includes("first");
+  ctx.isLastName = joined.includes("last");
+  ctx.isPhone = ctx.fieldType === "tel" || joined.includes("phone") || joined.includes("mobile");
+  ctx.isEmail = ctx.fieldType === "email" || joined.includes("email");
+  ctx.isLinkedIn = joined.includes("linkedin");
+  ctx.isGitHub = joined.includes("github");
+  ctx.isTwitter = joined.includes("twitter") || joined.includes("x.com");
+  ctx.isUrl = ctx.fieldType === "url" || joined.includes("portfolio") || joined.includes("website") || joined.includes("url");
+  ctx.isNameLike = joined.includes("name");
+  ctx.isLocationLike =
+    joined.includes("location") ||
+    joined.includes("city") ||
+    joined.includes("state") ||
+    joined.includes("country") ||
+    joined.includes("address") ||
+    joined.includes("postal") ||
+    joined.includes("zip");
 
   return ctx;
 }
@@ -303,11 +413,22 @@ async function requestSuggestions(el) {
   panel.style.display = "block";
 
   const requestId = ++requestCounter;
+  activePanelRequestId = requestId;
   renderPanelLoading(panel);
 
   const context = buildContext(el);
+  const timeoutId = setTimeout(() => {
+    if (requestId !== activePanelRequestId) return;
+    renderPanelError(panel, `Request timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)}s.`);
+  }, REQUEST_TIMEOUT_MS);
+
   chrome.runtime.sendMessage({ type: "GENERATE_SUGGESTIONS", context, requestId }, (response) => {
-    if (requestId !== requestCounter) return;
+    clearTimeout(timeoutId);
+    if (requestId !== activePanelRequestId) return;
+    if (chrome.runtime.lastError) {
+      renderPanelError(panel, `Extension messaging error: ${chrome.runtime.lastError.message}`);
+      return;
+    }
     if (!response || !response.ok) {
       renderPanelError(panel, response?.error || "Error generating suggestions.");
       return;
@@ -352,6 +473,7 @@ function silentFillField(el, tone = "balanced") {
     const silentRequestId = Date.now() + Math.floor(Math.random()*1000);
     
     chrome.runtime.sendMessage({ type: "GENERATE_SUGGESTIONS", context, requestId: silentRequestId }, (response) => {
+      if (chrome.runtime.lastError) { resolve(null); return; }
       if (!response?.ok) { resolve(null); return; }
       
       const variants = response.variants || {};
@@ -366,8 +488,10 @@ function silentFillField(el, tone = "balanced") {
         return;
       }
 
-      if (best) setFieldValue(el, best, { avoidFocus: true });
-      resolve(best);
+      if (best) {
+        setFieldValue(el, best, { avoidFocus: true, context });
+      }
+      resolve(best || null);
     });
   });
 }
@@ -454,10 +578,37 @@ function init() {
     chrome.storage.onChanged.addListener((changes) => {
       if (changes.assistantEnabled) {
         assistantEnabled = changes.assistantEnabled.newValue === true;
+        if (!assistantEnabled) {
+          hidePanel();
+          hideAutoFillOverlay();
+          activePanelRequestId = 0;
+        }
         updateAutoFillButtonVisibility();
       }
     });
   }
+}
+
+if (globalThis.chrome?.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "JOB_FORM_AI_PING") {
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message?.type !== "SUGGESTION_STREAM_PROGRESS") return;
+    if (!assistantEnabled || isAutoFilling) return;
+    if (Number(message.requestId || 0) !== activePanelRequestId) return;
+
+    const stage = String(message.stage || "");
+    const detail = String(message.detail || "");
+    if (stage === "error") {
+      const panel = getOrCreatePanel();
+      renderPanelError(panel, detail || "Streaming error");
+      return;
+    }
+    if (detail) updateLoadingText(detail);
+  });
 }
 
 init();

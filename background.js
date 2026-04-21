@@ -1,6 +1,7 @@
 const SYSTEM_PROMPT = [
   "You are an assistant that writes hyper-concise, truthful job application responses.",
   "FACT FIELDS: If field is Name, Email, Phone, LinkedIn, or Location, return ONLY the exact value from the resume. No sentences, no apologies, no punctuation unless part of the data.",
+  "If userSocialLinks are provided and field asks LinkedIn/GitHub/Twitter/portfolio URL, return that exact URL.",
   "DROPDOWN FIELDS: If `options` are provided, you MUST pick exactly one string from that list. Do not explain your choice.",
   "MISSING DATA: If a specific FACT field is not in the resume, return `[MISSING_DATA]`. Do not fabricate or write a narrative substitute.",
   "NARRATIVE FIELDS: For open-ended questions, write a professional response based on the resume.",
@@ -38,8 +39,188 @@ function toStringArray(input) {
   return input.map((item) => String(item).trim()).filter(Boolean).slice(0, 3);
 }
 
+function normalizeSpace(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function extractFirstRegex(text, regex) {
+  const match = String(text || "").match(regex);
+  return match?.[0] ? String(match[0]).trim() : "";
+}
+
+function getContextHint(context) {
+  const joined = [
+    context?.fieldLabel,
+    context?.name,
+    context?.id,
+    context?.placeholder,
+    context?.fieldType
+  ]
+    .map((v) => String(v || "").toLowerCase())
+    .join(" ");
+  return joined;
+}
+
+function normalizeUrl(value) {
+  const raw = normalizeSpace(value);
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}\/?/i.test(raw)) return `https://${raw}`;
+  return raw;
+}
+
+function isSocialFieldContext(context) {
+  if (!context || typeof context !== "object") return false;
+  if (context.isLinkedIn || context.isGitHub || context.isTwitter) return true;
+  const hint = getContextHint(context);
+  return /\b(linkedin|github|twitter|x\.com|social)\b/.test(hint);
+}
+
+function getStoredSocialValueForContext(context, socialLinks) {
+  const links = socialLinks || {};
+  const hint = getContextHint(context);
+
+  if (context?.isLinkedIn || hint.includes("linkedin")) return normalizeUrl(links.linkedin || "");
+  if (context?.isGitHub || hint.includes("github")) return normalizeUrl(links.github || "");
+  if (context?.isTwitter || hint.includes("twitter") || hint.includes("x.com")) return normalizeUrl(links.twitter || "");
+
+  if (context?.isUrl || String(context?.fieldType || "").toLowerCase() === "url" || hint.includes("website") || hint.includes("portfolio")) {
+    return normalizeUrl(links.linkedin || links.github || links.twitter || "");
+  }
+
+  return "";
+}
+
+function isFactFieldContext(context) {
+  if (!context || typeof context !== "object") return false;
+  if (context.isFirstName || context.isLastName || context.isPhone || context.isEmail || context.isLinkedIn || context.isGitHub || context.isTwitter || context.isUrl) {
+    return true;
+  }
+  const hint = getContextHint(context);
+  return /\b(name|email|phone|mobile|linkedin|github|twitter|x\.com|website|portfolio|url|location|city|country|state|address|postal|zip)\b/.test(hint);
+}
+
+function sanitizeSuggestionForContext(text, context) {
+  const value = normalizeSpace(text);
+  if (!value) return "";
+  if (value.includes("[MISSING_DATA]")) return "[MISSING_DATA]";
+
+  const hint = getContextHint(context);
+  const isEmail = context?.isEmail || String(context?.fieldType || "").toLowerCase() === "email" || hint.includes("email");
+  const isPhone = context?.isPhone || String(context?.fieldType || "").toLowerCase() === "tel" || hint.includes("phone") || hint.includes("mobile");
+  const isLinkedIn = context?.isLinkedIn || hint.includes("linkedin");
+  const isGitHub = context?.isGitHub || hint.includes("github");
+  const isTwitter = context?.isTwitter || hint.includes("twitter") || hint.includes("x.com");
+  const isUrl =
+    context?.isUrl ||
+    String(context?.fieldType || "").toLowerCase() === "url" ||
+    isLinkedIn ||
+    isGitHub ||
+    isTwitter ||
+    hint.includes("website") ||
+    hint.includes("portfolio") ||
+    hint.includes("url");
+
+  if (isEmail) {
+    return extractFirstRegex(value, /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || "[MISSING_DATA]";
+  }
+
+  if (isUrl) {
+    const httpUrl = extractFirstRegex(value, /https?:\/\/[^\s)>"']+/i);
+    if (httpUrl) return httpUrl;
+
+    if (isLinkedIn) {
+      const linked = extractFirstRegex(value, /linkedin\.com\/[^\s)>"']+/i);
+      if (linked) return `https://${linked.replace(/^https?:\/\//i, "")}`;
+    }
+    if (isGitHub) {
+      const git = extractFirstRegex(value, /github\.com\/[^\s)>"']+/i);
+      if (git) return `https://${git.replace(/^https?:\/\//i, "")}`;
+    }
+    if (isTwitter) {
+      const x = extractFirstRegex(value, /(twitter\.com|x\.com)\/[^\s)>"']+/i);
+      if (x) return `https://${x.replace(/^https?:\/\//i, "")}`;
+    }
+    return "[MISSING_DATA]";
+  }
+
+  if (isPhone) {
+    const compact = value.replace(/[^\d+()\-\s]/g, "").trim();
+    const digits = compact.replace(/\D/g, "");
+    return digits.length >= 7 ? compact : "[MISSING_DATA]";
+  }
+
+  return value;
+}
+
+function pickBestOption(options, rawText) {
+  const normalizedOptions = toStringArray(options);
+  if (!normalizedOptions.length) return "";
+  const search = normalizeSpace(rawText).toLowerCase();
+  if (!search) return "";
+
+  const exact = normalizedOptions.find((opt) => normalizeSpace(opt).toLowerCase() === search);
+  if (exact) return exact;
+
+  const contains = normalizedOptions.find((opt) => normalizeSpace(opt).toLowerCase().includes(search))
+    || normalizedOptions.find((opt) => search.includes(normalizeSpace(opt).toLowerCase()));
+  if (contains) return contains;
+
+  const tokens = search.split(/[^a-z0-9+]+/i).filter(Boolean);
+  let best = "";
+  let bestScore = 0;
+  for (const option of normalizedOptions) {
+    const optLower = normalizeSpace(option).toLowerCase();
+    const score = tokens.reduce((acc, token) => (optLower.includes(token) ? acc + 1 : acc), 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = option;
+    }
+  }
+  return bestScore > 0 ? best : "";
+}
+
+function normalizeVariantsForContext(payload, context) {
+  const options = toStringArray(context?.options);
+  const firstCandidate =
+    payload?.balanced?.[0] ||
+    payload?.concise?.[0] ||
+    payload?.detailed?.[0] ||
+    "";
+
+  if (options.length) {
+    const selected = pickBestOption(options, firstCandidate);
+    if (selected) {
+      return {
+        concise: [selected, selected, selected],
+        balanced: [selected, selected, selected],
+        detailed: [selected, selected, selected]
+      };
+    }
+  }
+
+  if (isFactFieldContext(context)) {
+    const sanitized = sanitizeSuggestionForContext(firstCandidate, context) || "[MISSING_DATA]";
+    return {
+      concise: [sanitized, sanitized, sanitized],
+      balanced: [sanitized, sanitized, sanitized],
+      detailed: [sanitized, sanitized, sanitized]
+    };
+  }
+
+  return payload;
+}
+
 function fallbackSuggestions(context) {
   const field = context.fieldLabel || context.placeholder || context.name || "this question";
+  if (toStringArray(context?.options).length || isFactFieldContext(context)) {
+    const missing = "[MISSING_DATA]";
+    return {
+      concise: [missing, missing, missing],
+      balanced: [missing, missing, missing],
+      detailed: [missing, missing, missing]
+    };
+  }
   return {
     concise: [
       `My background aligns well with ${field}, with practical experience and quick adaptability.`,
@@ -194,12 +375,15 @@ function sendProgressToTab(tabId, requestId, stage, detail) {
 }
 
 async function generateWithOpenAINonStream(apiKey, model, resumeText, context, tabHistory) {
+  const socialLinks = context?.socialLinks || {};
   const userPrompt = {
     resume: resumeText,
+    userSocialLinks: socialLinks,
     fieldContext: context,
     recentQuestionsInThisBrowserTab: tabHistory,
     instructions: [
       "Generate suggestions for this single field only.",
+      "If field asks for LinkedIn/GitHub/Twitter/social URL, use userSocialLinks first.",
       "Avoid repeating nearly identical text across the 3 variants.",
       "No markdown, no numbering, no extra keys.",
       "Return JSON object exactly: { concise: string[], balanced: string[], detailed: string[] }."
@@ -251,16 +435,19 @@ async function generateWithOpenAINonStream(apiKey, model, resumeText, context, t
     throw new Error("Model output missing one or more variant arrays.");
   }
 
-  return payload;
+  return normalizeVariantsForContext(payload, context);
 }
 
 async function generateWithOpenAI(apiKey, model, resumeText, context, tabHistory, onProgress) {
+  const socialLinks = context?.socialLinks || {};
   const userPrompt = {
     resume: resumeText,
+    userSocialLinks: socialLinks,
     fieldContext: context,
     recentQuestionsInThisBrowserTab: tabHistory,
     instructions: [
       "Generate suggestions for this single field only.",
+      "If field asks for LinkedIn/GitHub/Twitter/social URL, use userSocialLinks first.",
       "Avoid repeating nearly identical text across the 3 variants.",
       "No markdown, no numbering, no extra keys.",
       "Return JSON object exactly: { concise: string[], balanced: string[], detailed: string[] }."
@@ -390,7 +577,7 @@ async function generateWithOpenAI(apiKey, model, resumeText, context, tabHistory
       balanced: payload.balanced.length,
       detailed: payload.detailed.length
     });
-    return payload;
+    return normalizeVariantsForContext(payload, context);
   } catch (error) {
     clearTimeout(timeoutId);
     if (String(error?.name || "").toLowerCase() === "aborterror" || String(error).includes("timeout")) {
@@ -436,11 +623,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   (async () => {
-    const { resumeText, openaiApiKey, openaiModel, assistantEnabled } = await chrome.storage.local.get([
+    const { resumeText, openaiApiKey, openaiModel, assistantEnabled, linkedinUrl, githubUrl, twitterUrl } = await chrome.storage.local.get([
       "resumeText",
       "openaiApiKey",
       "openaiModel",
-      "assistantEnabled"
+      "assistantEnabled",
+      "linkedinUrl",
+      "githubUrl",
+      "twitterUrl"
     ]);
     if (assistantEnabled === false) {
       sendResponse({ ok: false, error: "Assistant is OFF. Turn it ON from extension popup." });
@@ -458,6 +648,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     const context = message.context || {};
+    context.socialLinks = {
+      linkedin: String(linkedinUrl || "").trim(),
+      github: String(githubUrl || "").trim(),
+      twitter: String(twitterUrl || "").trim()
+    };
     const tabId = typeof sender?.tab?.id === "number" ? sender.tab.id : -1;
     const requestId = Number(message.requestId || 0);
     const tabHistory = getTabState(tabId).history;
@@ -466,8 +661,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       tabId,
       hasResume: Boolean(resumeText && resumeText.trim().length >= 50),
       hasOpenAIKey: Boolean(effectiveOpenAIKey),
-      field: context?.fieldLabel || context?.placeholder || context?.name || "unknown"
+      field: context?.fieldLabel || context?.placeholder || context?.name || "unknown",
+      hasSocialLinks: Boolean(context.socialLinks.linkedin || context.socialLinks.github || context.socialLinks.twitter)
     });
+
+    if (isSocialFieldContext(context)) {
+      const directSocial = getStoredSocialValueForContext(context, context.socialLinks);
+      if (directSocial) {
+        const payload = {
+          concise: [directSocial, directSocial, directSocial],
+          balanced: [directSocial, directSocial, directSocial],
+          detailed: [directSocial, directSocial, directSocial]
+        };
+        pushTabHistory(tabId, context, payload);
+        sendProgressToTab(tabId, requestId, "done", "Used saved social link.");
+        sendResponse({ ok: true, variants: payload, source: "saved_social" });
+        return;
+      }
+    }
 
     if (!effectiveOpenAIKey) {
       const payload = fallbackSuggestions(context);
@@ -529,6 +740,15 @@ async function injectIntoAllTabs() {
   for (const tab of tabs) {
     if (!tab.url || tab.url.startsWith("chrome://") || tab.url.startsWith("edge://")) continue;
     try {
+      let alreadyInjected = false;
+      try {
+        const ping = await chrome.tabs.sendMessage(tab.id, { type: "JOB_FORM_AI_PING" });
+        alreadyInjected = Boolean(ping?.ok);
+      } catch {
+        alreadyInjected = false;
+      }
+      if (alreadyInjected) continue;
+
       await chrome.scripting.executeScript({
         target: { tabId: tab.id, allFrames: true },
         files: contentScript.js
