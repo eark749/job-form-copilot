@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Job Form AI Assistant",
+  "name": "Jeddy",
   "version": "0.1.0",
   "description": "Suggests resume-based answers while filling job applications.",
   "permissions": ["storage"],
@@ -16,7 +16,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Job Form AI Assistant",
+    "default_title": "Jeddy",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
