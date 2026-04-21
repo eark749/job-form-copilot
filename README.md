@@ -1,45 +1,38 @@
-# Job Form AI Assistant (Chrome Extension)
+# Jeddy — AI Job Form Assistant
 
-This extension helps you fill job applications faster.
-When you click a question field, it shows resume-based AI suggestions directly under that field.
+A Chrome extension that auto-fills job application forms using your resume.
 
-## New in this version
-- Resume PDF upload support from popup.
-- Local PDF text extraction (for text-based PDFs).
-- OCR fallback extraction for difficult/scanned PDFs now uses Mistral OCR.
-- Better UI in popup and in-page suggestion card.
-- Assistant ON/OFF toggle to pause auto-requests on every form input.
-- Suggestion style tabs: `Concise`, `Balanced`, `Detailed`.
-- Per-browser-tab question history context so each tab's flow stays separate.
+## Install
 
-## Setup
-1. Open Chrome and go to `chrome://extensions`.
-2. Enable **Developer mode**.
-3. Click **Load unpacked**.
-4. Select this folder:
-   - `/Users/vansh/Documents/Codex/2026-04-18-see-i-want-to-create-a`
-5. Open extension popup.
-6. Upload your resume PDF and click **Extract PDF**.
-7. Add your OpenAI API key (for job-form answers).
-8. Add Mistral API key for PDF OCR in either:
-   - popup `Mistral API Key` field, or
-   - `.env` file: `MISTRAL_API_KEY=...`
-9. Add OpenAI key for answer suggestions in either:
-   - popup `OpenAI API Key` field, or
-   - `.env` file: `OPENAI_API_KEY=...`
-10. Click **Save Settings**.
+1. Go to `chrome://extensions`, enable **Developer mode**
+2. Click **Load unpacked** and select this folder
+3. Click the Jeddy icon in your toolbar to open the side panel
 
-## Usage
-1. Open any job application page.
-2. Click a text field.
-3. Pick a tone tab (`Concise`, `Balanced`, `Detailed`).
-4. Click the suggestion you want to paste.
+## API Keys (.env)
 
-## Notes
-- If API key is missing or API fails, fallback suggestions are still shown.
-- Scanned/image-only PDFs may not extract correctly; paste text manually in that case.
-- Default model is `gpt-4o-mini` and can be changed in popup.
+The extension reads API keys from a `.env` file inside this folder.
 
-## Current limitations
-- Dropdown/radio auto-select is not implemented yet.
-- Some websites with strict anti-automation behavior may block scripted input.
+1. Duplicate `env.example` and rename it to `.env`
+2. Fill in your keys:
+   ```
+   OPENAI_API_KEY=sk-...
+   MISTRAL_API_KEY=...
+   ```
+3. Save the file — that's it, no restart needed
+
+> **Where to get them**
+> - OpenAI key → [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+> - Mistral key → [console.mistral.ai/api-keys](https://console.mistral.ai/api-keys) (only needed if your PDF is scanned/image-based)
+
+## First-time Setup
+
+1. **Resume** — Upload your resume PDF or paste the text
+2. **Social Links** — Add LinkedIn, GitHub, Twitter URLs and hit **Save** on each
+3. **Settings** — Choose your GPT model
+
+## Using It
+
+- Open the side panel on any job application page by clicking the Jeddy icon
+- **Click any form field** — Jeddy shows AI suggestions based on your resume, click one to fill it
+- **Auto-fill Page** — Click the button in the panel to fill all empty fields at once
+- Toggle **Assistant** on/off from the panel header

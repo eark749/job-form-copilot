@@ -721,6 +721,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 /* ─────────────────────────────────────────────────────────────────
+   SIDE PANEL — opens on the active tab only, stays until closed
+───────────────────────────────────────────────────────────────── */
+chrome.action.onClicked.addListener((tab) => {
+  chrome.sidePanel.open({ tabId: tab.id });
+});
+
+/* ─────────────────────────────────────────────────────────────────
    AUTO-INJECTION ON INSTALL/STARTUP
 ───────────────────────────────────────────────────────────────── */
 chrome.runtime.onInstalled.addListener(() => {

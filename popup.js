@@ -338,10 +338,35 @@ assistantEnabledEl.addEventListener("change", () => {
   setStatus(assistantEnabledEl.checked ? "Assistant ON" : "Assistant OFF");
 });
 
-[linkedinUrlEl, githubUrlEl, twitterUrlEl].forEach((el) => {
-  if (!el) return;
-  el.addEventListener("change", () => {
-    saveSocialLinksOnly();
+function saveSingleSocialField(fieldId, value) {
+  chrome.storage.local.set({ [fieldId]: value.trim() });
+}
+
+function flashSaveBtn(btn) {
+  btn.textContent = "✓";
+  btn.classList.add("done");
+  setTimeout(() => {
+    btn.textContent = "Save";
+    btn.classList.remove("done");
+  }, 1500);
+}
+
+document.querySelectorAll(".save-link-btn").forEach((btn) => {
+  const fieldId = btn.dataset.field;
+  const input = document.getElementById(fieldId);
+  if (!input) return;
+
+  btn.addEventListener("click", () => {
+    saveSingleSocialField(fieldId, input.value);
+    flashSaveBtn(btn);
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveSingleSocialField(fieldId, input.value);
+      flashSaveBtn(btn);
+    }
   });
 });
 
@@ -378,6 +403,31 @@ async function extractWithMistral(file, apiKey) {
   const text = (data.pages || []).map(p => p.markdown || p.text || "").join("\n\n");
   return text.trim();
 }
+
+// Auto-fill button
+const autofillBtn = document.getElementById("autofillBtn");
+const autofillStatusEl = document.getElementById("autofillStatus");
+
+autofillBtn.addEventListener("click", async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return;
+  autofillBtn.disabled = true;
+  autofillBtn.textContent = "Filling...";
+  autofillStatusEl.textContent = "";
+
+  chrome.tabs.sendMessage(tab.id, { type: "TRIGGER_AUTOFILL" }, (response) => {
+    autofillBtn.disabled = false;
+    autofillBtn.textContent = "✨ Auto-fill Page";
+    if (chrome.runtime.lastError) {
+      autofillStatusEl.style.color = "#ff4d4d";
+      autofillStatusEl.textContent = "Could not reach page. Try refreshing.";
+    } else if (response?.filled !== undefined) {
+      autofillStatusEl.style.color = "#10b981";
+      autofillStatusEl.textContent = `Done! ${response.filled} field${response.filled !== 1 ? "s" : ""} filled.`;
+    }
+    setTimeout(() => { autofillStatusEl.textContent = ""; }, 3000);
+  });
+});
 
 // Init
 loadSettings();

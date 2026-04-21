@@ -1,6 +1,5 @@
 const PANEL_ID = "job-form-ai-assistant-panel";
 const LOADING_ID = "job-form-ai-assistant-loading";
-const AUTOFILL_BTN_ID = "job-form-ai-autofill-btn";
 const AUTOFILL_OVERLAY_ID = "job-form-ai-autofill-overlay";
 
 let activeElement = null;
@@ -661,9 +660,6 @@ async function autoFillPage() {
 
   if (allFields.length === 0) { alert("No empty fields."); return; }
 
-  const btn = document.getElementById(AUTOFILL_BTN_ID);
-  if (btn) { btn.disabled = true; btn.innerText = "Filling..."; }
-
   isAutoFilling = true;
   requestCounter++;
 
@@ -678,40 +674,13 @@ async function autoFillPage() {
         await new Promise(r => setTimeout(r, 200));
     }
     showAutoFillOverlay(`Done! ${filled} fields filled.`, allFields.length, allFields.length);
-    if (btn) btn.innerHTML = `✅ Filled ${filled}`;
-    setTimeout(() => {
-      hideAutoFillOverlay();
-      if (btn) { btn.disabled = false; btn.innerText = "Auto-fill"; }
-    }, 2500);
+    setTimeout(() => hideAutoFillOverlay(), 2500);
+    return filled;
   } finally {
     isAutoFilling = false;
   }
 }
 
-function injectAutoFillButton() {
-  if (document.getElementById(AUTOFILL_BTN_ID)) return;
-  const btn = document.createElement("button");
-  btn.id = AUTOFILL_BTN_ID;
-  btn.innerText = "Auto-fill";
-  btn.style.cssText = `
-    position:fixed; bottom:20px; right:20px; z-index:2147483647;
-    background:#18191d;
-    color:#f8f8fa; border:1px solid #25262c; border-radius:999px; padding:11px 18px;
-    font-size:13px; font-weight:800; cursor:pointer;
-    box-shadow:0 8px 22px rgba(18,18,22,0.3);
-    letter-spacing:0.2px;
-  `;
-  btn.addEventListener("mouseenter", () => { btn.style.background = "#0f1013"; });
-  btn.addEventListener("mouseleave", () => { btn.style.background = "#18191d"; });
-  btn.addEventListener("click", () => autoFillPage());
-  document.body?.appendChild(btn);
-  updateAutoFillButtonVisibility();
-}
-
-function updateAutoFillButtonVisibility() {
-  const btn = document.getElementById(AUTOFILL_BTN_ID);
-  if (btn) btn.style.display = assistantEnabled ? "block" : "none";
-}
 
 function init() {
   if (!/^(https?|file):$/.test(location.protocol)) return;
@@ -724,11 +693,8 @@ function init() {
     if (p && !p.contains(e.target) && e.target !== activeElement) hidePanel();
   }, true);
 
-  injectAutoFillButton();
-  setTimeout(injectAutoFillButton, 2000);
-
   if (globalThis.chrome?.storage) {
-    refreshAssistantEnabledIfNeeded(true).then(() => updateAutoFillButtonVisibility());
+    refreshAssistantEnabledIfNeeded(true);
     chrome.storage.onChanged.addListener((changes) => {
       if (changes.assistantEnabled) {
         assistantEnabled = changes.assistantEnabled.newValue === true;
@@ -737,7 +703,6 @@ function init() {
           hideAutoFillOverlay();
           activePanelRequestId = 0;
         }
-        updateAutoFillButtonVisibility();
       }
     });
   }
@@ -747,6 +712,11 @@ if (globalThis.chrome?.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "JOB_FORM_AI_PING") {
       sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message?.type === "TRIGGER_AUTOFILL") {
+      autoFillPage().then((filled) => sendResponse({ filled })).catch(() => sendResponse({ filled: 0 }));
       return true;
     }
 

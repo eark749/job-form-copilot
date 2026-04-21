@@ -17,22 +17,18 @@
   padding: 0;
 }
 
-html {
-  width: 420px;
-  min-height: 560px;
+html, body {
+  width: 100%;
+  height: 100%;
   background: var(--bg);
 }
 
 body {
-  width: 420px;
-  min-height: 560px;
-  padding: 8px;
-  background: var(--bg);
   color: var(--text);
   font-family: "Avenir Next", "SF Pro Rounded", "Trebuchet MS", sans-serif;
   overflow-y: auto;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
 }
 
 body[data-view="step2"] {
@@ -51,11 +47,11 @@ body[data-view="dashboard"] {
 }
 
 .glass-container {
-  width: min(420px, 100%);
-  height: calc(560px - 16px);
+  width: 100%;
+  flex: 1;
   background: var(--surface);
-  border: 1px solid #d8d9de;
-  border-radius: 28px;
+  border: none;
+  border-radius: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -150,17 +146,8 @@ h1 {
 
 main {
   padding: 10px 18px 18px;
-  overflow: auto;
-}
-
-@media (max-height: 700px) {
-  .glass-container {
-    min-height: 0;
-  }
-
-  main {
-    overflow: auto;
-  }
+  flex: 1;
+  overflow-y: auto;
 }
 
 .view {
@@ -194,8 +181,9 @@ main {
 .view-settings {
   border: 1px solid #dde0e6;
   border-radius: 16px;
-  padding: 14px;
+  padding: 16px;
   background: var(--panel);
+  width: 100%;
 }
 
 .view-resume {
@@ -318,6 +306,41 @@ select:focus {
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 12%, transparent);
 }
 
+.input-with-save {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-save input {
+  padding-right: 64px;
+}
+
+.save-link-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.save-link-btn:hover {
+  opacity: 0.85;
+}
+
+.save-link-btn.done {
+  background: #10b981;
+}
+
 .action-bar {
   display: flex;
   gap: 10px;
@@ -356,6 +379,34 @@ select:focus {
 .btn.loading {
   opacity: 0.65;
   pointer-events: none;
+}
+
+.autofill-btn {
+  width: 100%;
+  margin-top: 14px;
+  background: #18191d;
+  color: #f8f8fa;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.autofill-btn:hover {
+  background: #0f1013;
+}
+
+.autofill-btn:disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.autofill-status {
+  font-size: 12px;
+  color: #10b981;
+  margin-top: 8px;
+  min-height: 16px;
+  text-align: center;
 }
 
 .toggle-wrap {
@@ -417,8 +468,9 @@ input:checked + .slider::before {
 .view-dashboard {
   border: 1px solid #dde0e6;
   border-radius: 16px;
-  padding: 14px;
+  padding: 16px;
   background: #ffffff;
+  width: 100%;
 }
 
 .dashboard-head {

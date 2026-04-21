@@ -59,15 +59,24 @@
 
         <div class="input-group">
           <label>LinkedIn URL</label>
-          <input type="text" id="linkedinUrl" placeholder="https://linkedin.com/in/username">
+          <div class="input-with-save">
+            <input type="text" id="linkedinUrl" placeholder="https://linkedin.com/in/username">
+            <button class="save-link-btn" data-field="linkedinUrl">Save</button>
+          </div>
         </div>
         <div class="input-group">
           <label>GitHub URL</label>
-          <input type="text" id="githubUrl" placeholder="https://github.com/username">
+          <div class="input-with-save">
+            <input type="text" id="githubUrl" placeholder="https://github.com/username">
+            <button class="save-link-btn" data-field="githubUrl">Save</button>
+          </div>
         </div>
         <div class="input-group">
           <label>Twitter / X URL</label>
-          <input type="text" id="twitterUrl" placeholder="https://x.com/username">
+          <div class="input-with-save">
+            <input type="text" id="twitterUrl" placeholder="https://x.com/username">
+            <button class="save-link-btn" data-field="twitterUrl">Save</button>
+          </div>
         </div>
 
         <div class="action-bar">
@@ -137,6 +146,9 @@
             <div class="summary-meta">Click to edit</div>
           </button>
         </div>
+
+        <button id="autofillBtn" class="btn autofill-btn" type="button">✨ Auto-fill Page</button>
+        <div id="autofillStatus" class="autofill-status"></div>
 
         <div id="status" class="status-msg"></div>
       </section>
