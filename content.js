@@ -78,6 +78,11 @@ function getFieldValue(el) {
   if (el.tagName === "SELECT") {
     return el.selectedOptions?.[0]?.text || el.value || "";
   }
+  if (el.getAttribute?.("role") === "combobox") {
+    const ariaValue = el.getAttribute("aria-valuetext") || el.getAttribute("aria-label");
+    if (ariaValue) return ariaValue;
+    return el.value || el.textContent || "";
+  }
   return el.value || "";
 }
 
@@ -88,6 +93,122 @@ function normalizeSpace(value) {
 function extractFirstRegex(text, regex) {
   const match = String(text || "").match(regex);
   return match?.[0] ? String(match[0]).trim() : "";
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isElementVisible(el) {
+  if (!el || !(el instanceof Element)) return false;
+  const style = window.getComputedStyle(el);
+  if (style.display === "none" || style.visibility === "hidden") return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function normalizeForMatch(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9+]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pickBestOptionElement(optionElements, suggestion) {
+  const target = normalizeForMatch(suggestion);
+  if (!target) return null;
+
+  const items = optionElements
+    .map((el) => ({ el, text: normalizeForMatch(el.innerText || el.textContent || "") }))
+    .filter((item) => item.text);
+  if (!items.length) return null;
+
+  const exact = items.find((item) => item.text === target);
+  if (exact) return exact.el;
+
+  const contains = items.find((item) => item.text.includes(target) || target.includes(item.text));
+  if (contains) return contains.el;
+
+  const tokens = target.split(" ").filter(Boolean);
+  let best = null;
+  let bestScore = 0;
+  for (const item of items) {
+    const score = tokens.reduce((acc, token) => (item.text.includes(token) ? acc + 1 : acc), 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = item.el;
+    }
+  }
+  return bestScore > 0 ? best : null;
+}
+
+function getVisibleComboboxOptions(el) {
+  const candidates = [];
+  const controlledId = el.getAttribute("aria-controls");
+  if (controlledId) {
+    const controlled = document.getElementById(controlledId);
+    if (controlled) {
+      candidates.push(...Array.from(controlled.querySelectorAll("[role='option'], li, [class*='option'], [class*='menu-item']")));
+    }
+  }
+
+  if (!candidates.length) {
+    candidates.push(
+      ...Array.from(
+        document.querySelectorAll(
+          "[role='listbox'] [role='option'], [role='menu'] [role='menuitem'], [role='option'], [class*='select-option'], [class*='dropdown-option'], [class*='menu-item']"
+        )
+      )
+    );
+  }
+
+  return candidates.filter((node) => isElementVisible(node) && normalizeSpace(node.innerText || node.textContent || "").length > 0);
+}
+
+function isCustomCombobox(el) {
+  if (!el || !(el instanceof Element)) return false;
+  if (el.tagName === "SELECT") return false;
+  if (el.getAttribute("role") === "combobox") return true;
+  if (el.getAttribute("aria-haspopup") === "listbox") return true;
+  return false;
+}
+
+async function setCustomComboboxValue(el, text, context, avoidFocus) {
+  const sanitized = sanitizeValueForField(el, text, context) || normalizeSpace(text);
+  if (!sanitized) return false;
+
+  if (!avoidFocus) el.focus();
+  el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  try {
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  } catch {}
+
+  await wait(120);
+  const optionEl = pickBestOptionElement(getVisibleComboboxOptions(el), sanitized);
+  if (optionEl) {
+    optionEl.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    optionEl.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    optionEl.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.dispatchEvent(new Event("blur", { bubbles: true }));
+    return true;
+  }
+
+  if ("value" in el) {
+    el.value = sanitized;
+  } else if (el.isContentEditable) {
+    el.innerText = sanitized;
+  }
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+  try {
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  } catch {}
+  return true;
 }
 
 function looksNarrative(text) {
@@ -138,7 +259,13 @@ function sanitizeValueForField(el, text, context = null) {
 
 function pickBestSelectOption(el, suggestion) {
   const search = normalizeSpace(suggestion).toLowerCase();
-  const options = Array.from(el.options || []);
+  const options = Array.from(el.options || []).filter((opt) => {
+    if (opt.disabled) return false;
+    const text = normalizeSpace(opt.text);
+    if (!text) return false;
+    if (!String(opt.value || "").trim() && /^(select|choose|pick)\b/i.test(text)) return false;
+    return true;
+  });
   if (!options.length || !search) return null;
 
   const byExact = options.find((opt) => normalizeSpace(opt.text).toLowerCase() === search)
@@ -195,6 +322,16 @@ function setFieldValue(el, text, options = {}) {
     } else {
       showFieldNotification(el, "No matching option found");
     }
+    return;
+  }
+
+  if (isCustomCombobox(el)) {
+    void (async () => {
+      const ok = await setCustomComboboxValue(el, text, context, avoidFocus);
+      if (!ok) {
+        showFieldNotification(el, "No valid value found");
+      }
+    })();
     return;
   }
 
@@ -258,6 +395,7 @@ function buildContext(el) {
       el.tagName === "SELECT"
         ? Array.from(el.options || [])
             .map((opt) => String(opt.text || "").trim())
+            .filter((text) => !/^(select|choose|pick)\b/i.test(text))
             .filter(Boolean)
             .slice(0, 80)
         : []
@@ -488,10 +626,21 @@ function silentFillField(el, tone = "balanced") {
         return;
       }
 
-      if (best) {
-        setFieldValue(el, best, { avoidFocus: true, context });
+      if (!best) {
+        resolve(null);
+        return;
       }
-      resolve(best || null);
+
+      if (isCustomCombobox(el)) {
+        void (async () => {
+          const ok = await setCustomComboboxValue(el, best, context, true);
+          resolve(ok ? best : null);
+        })();
+        return;
+      }
+
+      setFieldValue(el, best, { avoidFocus: true, context });
+      resolve(best);
     });
   });
 }
@@ -500,12 +649,13 @@ async function autoFillPage() {
   await refreshAssistantEnabledIfNeeded();
   if (!assistantEnabled) { alert("Enable Assistant first."); return; }
 
-  const allFields = Array.from(document.querySelectorAll('input, textarea, select, [contenteditable="true"]'))
+  const allFields = Array.from(document.querySelectorAll('input, textarea, select, [role="combobox"], [contenteditable="true"]'))
     .filter(el => {
       if (!isSupportedField(el)) return false;
-      if (!el.offsetParent && el.tagName !== "SELECT") return false;
+      if (!el.offsetParent && el.tagName !== "SELECT" && !isCustomCombobox(el)) return false;
       if (el.tagName === "SELECT") return el.selectedIndex <= 0;
-      return getFieldValue(el).trim().length === 0;
+      const current = normalizeSpace(getFieldValue(el));
+      return current.length === 0 || /^(select|choose|pick)\b/i.test(current);
     });
 
   if (allFields.length === 0) { alert("No empty fields."); return; }
