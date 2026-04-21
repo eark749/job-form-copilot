@@ -8,6 +8,9 @@ const statusEl = document.getElementById("status");
 const resumeFileEl = document.getElementById("resumeFile");
 const extractBtn = document.getElementById("extractBtn");
 const pdfMetaEl = document.getElementById("pdfMeta");
+const dashResumeSummaryEl = document.getElementById("dashResumeSummary");
+const dashSocialSummaryEl = document.getElementById("dashSocialSummary");
+const dashSettingsSummaryEl = document.getElementById("dashSettingsSummary");
 
 // Social Link Selectors
 const linkedinUrlEl = document.getElementById("linkedinUrl");
@@ -23,6 +26,8 @@ const views = {
 };
 const progressContainer = document.getElementById("onboardingProgress");
 const mainToggle = document.getElementById("mainToggle");
+const homeBar = document.getElementById("homeBar");
+const homeBtn = document.getElementById("homeBtn");
 
 const MAX_PDF_BYTES = 6 * 1024 * 1024;
 let envKeysCache = null;
@@ -33,6 +38,7 @@ let envKeysCache = null;
 function showView(viewId) {
   Object.values(views).forEach(v => v.classList.remove("active"));
   views[viewId].classList.add("active");
+  document.body.dataset.view = viewId;
   
   // Update progress dots
   const stepMatch = viewId.match(/step(\d)/);
@@ -44,10 +50,55 @@ function showView(viewId) {
     });
     progressContainer.style.display = "flex";
     mainToggle.style.display = "none";
+    if (homeBar) homeBar.style.display = "flex";
   } else {
     progressContainer.style.display = "none";
     mainToggle.style.display = "flex";
+    if (homeBar) homeBar.style.display = "none";
   }
+}
+
+function safePreview(text, max = 100) {
+  const value = String(text || "").replace(/\s+/g, " ").trim();
+  if (!value) return "";
+  return value.length > max ? `${value.slice(0, max)}...` : value;
+}
+
+function renderDashboardSummary(stored) {
+  if (dashResumeSummaryEl) {
+    if (stored.resumePdfName) {
+      dashResumeSummaryEl.textContent = `PDF loaded: ${stored.resumePdfName}`;
+    } else if (stored.resumeText) {
+      dashResumeSummaryEl.textContent = `Text loaded: ${safePreview(stored.resumeText, 90)}`;
+    } else {
+      dashResumeSummaryEl.textContent = "No resume added yet.";
+    }
+  }
+
+  if (dashSocialSummaryEl) {
+    const social = [stored.linkedinUrl, stored.githubUrl, stored.twitterUrl].filter(Boolean);
+    dashSocialSummaryEl.textContent = social.length ? social.join(" | ") : "No social links saved yet.";
+  }
+
+  if (dashSettingsSummaryEl) {
+    const model = stored.openaiModel || "gpt-4o-mini";
+    const sourceLabel = "Keys hidden (internal config)";
+    dashSettingsSummaryEl.textContent = `Model: ${model} | ${sourceLabel}`;
+  }
+}
+
+document.querySelectorAll("#onboardingProgress .step-dot").forEach((stepBtn) => {
+  stepBtn.addEventListener("click", () => {
+    const step = String(stepBtn.dataset.step || "").trim();
+    if (!step) return;
+    showView(`step${step}`);
+  });
+});
+
+if (homeBtn) {
+  homeBtn.addEventListener("click", () => {
+    showView("dashboard");
+  });
 }
 
 document.getElementById("nextToStep2").addEventListener("click", async () => {
@@ -217,9 +268,10 @@ async function loadSettings() {
   ]);
 
   resumeTextEl.value = stored.resumeText || "";
-  apiKeyEl.value = stored.openaiApiKey || (await loadEnvKeys()).OPENAI_API_KEY || "";
+  const env = await loadEnvKeys();
+  if (apiKeyEl) apiKeyEl.value = stored.openaiApiKey || env.OPENAI_API_KEY || "";
   modelEl.value = stored.openaiModel || "gpt-4o-mini";
-  mistralApiKeyEl.value = stored.mistralApiKey || (await loadEnvKeys()).MISTRAL_API_KEY || "";
+  if (mistralApiKeyEl) mistralApiKeyEl.value = stored.mistralApiKey || env.MISTRAL_API_KEY || "";
   assistantEnabledEl.checked = stored.assistantEnabled === true;
   
   linkedinUrlEl.value = stored.linkedinUrl || "";
@@ -230,6 +282,11 @@ async function loadSettings() {
     pdfMetaEl.textContent = `PDF: ${stored.resumePdfName}`;
   }
 
+  renderDashboardSummary({
+    ...stored,
+    openaiModel: modelEl.value
+  });
+
   // If onboarding is done, go to dashboard
   if (stored.resumeText) {
     showView("dashboard");
@@ -239,11 +296,12 @@ async function loadSettings() {
 }
 
 async function saveAll() {
+  const env = await loadEnvKeys();
   const data = {
     resumeText: resumeTextEl.value.trim(),
-    openaiApiKey: apiKeyEl.value.trim(),
+    openaiApiKey: (apiKeyEl?.value || env.OPENAI_API_KEY || "").trim(),
     openaiModel: modelEl.value.trim(),
-    mistralApiKey: mistralApiKeyEl.value.trim(),
+    mistralApiKey: (mistralApiKeyEl?.value || env.MISTRAL_API_KEY || "").trim(),
     assistantEnabled: assistantEnabledEl.checked,
     linkedinUrl: linkedinUrlEl.value.trim(),
     githubUrl: githubUrlEl.value.trim(),
@@ -251,15 +309,23 @@ async function saveAll() {
   };
   
   await chrome.storage.local.set(data);
+  renderDashboardSummary(data);
   showView("dashboard");
   setStatus("All settings saved!");
 }
 
 async function saveSocialLinksOnly() {
-  await chrome.storage.local.set({
+  const socialData = {
     linkedinUrl: linkedinUrlEl.value.trim(),
     githubUrl: githubUrlEl.value.trim(),
     twitterUrl: twitterUrlEl.value.trim()
+  };
+  await chrome.storage.local.set(socialData);
+
+  const base = await chrome.storage.local.get(["resumeText", "resumePdfName", "openaiModel"]);
+  renderDashboardSummary({
+    ...base,
+    ...socialData
   });
 }
 

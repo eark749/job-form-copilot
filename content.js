@@ -582,19 +582,20 @@ function showAutoFillOverlay(message, progress, total) {
     overlay.id = AUTOFILL_OVERLAY_ID;
     overlay.style.cssText = `
       position:fixed; bottom:80px; right:20px; z-index:2147483646;
-      background:linear-gradient(135deg,#0f2027,#1a4a3c);
-      color:#ffffff; border-radius:14px; padding:14px 18px;
-      font-family:sans-serif; font-size:13px; box-shadow:0 8px 30px rgba(0,0,0,0.4);
-      min-width:220px; border:1px solid rgba(255,255,255,0.1);
+      background:#f7f7f8;
+      color:#1f2024; border-radius:16px; padding:14px 16px;
+      font-family:'Avenir Next','Segoe UI',sans-serif; font-size:13px;
+      box-shadow:0 10px 28px rgba(20,20,24,0.18);
+      min-width:250px; border:1px solid #d9dbe1;
     `;
     document.documentElement.appendChild(overlay);
   }
   const pct = total > 0 ? Math.round((progress / total) * 100) : 0;
   overlay.innerHTML = `
-    <div style="font-weight:700; color:#7fffd4; margin-bottom:6px;">✨ Auto-filling</div>
-    <div style="font-size:12px; margin-bottom:8px;">${message}</div>
-    <div style="background:rgba(255,255,255,0.1); height:6px; border-radius:9px; overflow:hidden;">
-      <div style="background:#3dffa0; height:100%; width:${pct}%;"></div>
+    <div style="font-weight:800; color:#202127; margin-bottom:6px;">Autofill Running</div>
+    <div style="font-size:12px; margin-bottom:9px; color:#666872;">${message}</div>
+    <div style="background:#eceef3; height:6px; border-radius:10px; overflow:hidden;">
+      <div style="background:#1f2024; height:100%; width:${pct}%; transition:width 200ms ease;"></div>
     </div>
   `;
   overlay.style.display = "block";
@@ -661,7 +662,7 @@ async function autoFillPage() {
   if (allFields.length === 0) { alert("No empty fields."); return; }
 
   const btn = document.getElementById(AUTOFILL_BTN_ID);
-  if (btn) { btn.disabled = true; btn.innerText = "⏳ Filling..."; }
+  if (btn) { btn.disabled = true; btn.innerText = "Filling..."; }
 
   isAutoFilling = true;
   requestCounter++;
@@ -680,7 +681,7 @@ async function autoFillPage() {
     if (btn) btn.innerHTML = `✅ Filled ${filled}`;
     setTimeout(() => {
       hideAutoFillOverlay();
-      if (btn) { btn.disabled = false; btn.innerText = "✨ Auto-fill"; }
+      if (btn) { btn.disabled = false; btn.innerText = "Auto-fill"; }
     }, 2500);
   } finally {
     isAutoFilling = false;
@@ -691,14 +692,17 @@ function injectAutoFillButton() {
   if (document.getElementById(AUTOFILL_BTN_ID)) return;
   const btn = document.createElement("button");
   btn.id = AUTOFILL_BTN_ID;
-  btn.innerText = "✨ Auto-fill";
+  btn.innerText = "Auto-fill";
   btn.style.cssText = `
     position:fixed; bottom:20px; right:20px; z-index:2147483647;
-    background:linear-gradient(135deg,#0d7a5f,#0f5e48);
-    color:white; border:none; border-radius:999px; padding:10px 18px;
-    font-size:13px; font-weight:700; cursor:pointer;
-    box-shadow:0 4px 20px rgba(0,0,0,0.3);
+    background:#18191d;
+    color:#f8f8fa; border:1px solid #25262c; border-radius:999px; padding:11px 18px;
+    font-size:13px; font-weight:800; cursor:pointer;
+    box-shadow:0 8px 22px rgba(18,18,22,0.3);
+    letter-spacing:0.2px;
   `;
+  btn.addEventListener("mouseenter", () => { btn.style.background = "#0f1013"; });
+  btn.addEventListener("mouseleave", () => { btn.style.background = "#18191d"; });
   btn.addEventListener("click", () => autoFillPage());
   document.body?.appendChild(btn);
   updateAutoFillButtonVisibility();

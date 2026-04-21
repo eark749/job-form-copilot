@@ -7,11 +7,10 @@
 </head>
 <body>
   <div class="glass-container">
-    <!-- Header -->
     <header>
       <div class="logo-area">
-        <div class="logo-icon">✨</div>
-        <h1>CareerFlow</h1>
+        <div class="logo-icon" aria-hidden="true">AP</div>
+        <h1>ApplyPilot</h1>
       </div>
       <div id="mainToggle" class="toggle-wrap" style="display:none;">
         <span class="status-label">Assistant</span>
@@ -22,43 +21,42 @@
       </div>
     </header>
 
-    <!-- Progress Indicator (During Onboarding) -->
-    <div id="onboardingProgress" class="progress-steps">
-      <div class="step-dot active" data-step="1"></div>
-      <div class="step-line"></div>
-      <div class="step-dot" data-step="2"></div>
-      <div class="step-line"></div>
-      <div class="step-dot" data-step="3"></div>
+    <div id="onboardingProgress" class="progress-steps" role="tablist" aria-label="Setup Steps">
+      <button class="step-dot active" data-step="1" type="button">Resume</button>
+      <button class="step-dot" data-step="2" type="button">Social Links</button>
+      <button class="step-dot" data-step="3" type="button">API Setup</button>
+    </div>
+
+    <div id="homeBar" class="home-bar" style="display:none;">
+      <button id="homeBtn" class="home-btn" type="button">Home</button>
     </div>
 
     <main id="viewContainer">
-      <!-- Step 1: Resume Upload -->
-      <section id="step1" class="view active">
-        <h2>1. Your Resume</h2>
-        <p>Upload your PDF to let the AI learn about your career.</p>
-        
+      <section id="step1" class="view view-resume active">
+        <h2>Upload Resume</h2>
+        <p>Add your resume once. We will use it across job forms.</p>
+
         <div class="upload-zone" id="dropZone">
-          <div class="upload-icon">📄</div>
-          <span>Click or Drag PDF here</span>
+          <div class="upload-icon">PDF</div>
+          <span>Click to choose resume PDF</span>
           <input type="file" id="resumeFile" accept="application/pdf" hidden>
           <div id="pdfMeta" class="file-meta"></div>
         </div>
 
         <div class="manual-entry">
-          <label>Or paste text manually:</label>
-          <textarea id="resumeText" placeholder="Paste your resume content here..."></textarea>
+          <label>Or paste resume text</label>
+          <textarea id="resumeText" placeholder="Paste resume content here..."></textarea>
         </div>
 
-        <div class="action-bar">
-          <button id="nextToStep2" class="btn primary">Continue ➜</button>
+        <div class="action-bar single">
+          <button id="nextToStep2" class="btn primary">Continue</button>
         </div>
       </section>
 
-      <!-- Step 2: Social Links -->
-      <section id="step2" class="view">
-        <h2>2. Social Presence</h2>
-        <p>Links used as fallbacks if not found in your resume.</p>
-        
+      <section id="step2" class="view view-social">
+        <h2>Social Links</h2>
+        <p>These are used directly for LinkedIn, GitHub and social URL questions.</p>
+
         <div class="input-group">
           <label>LinkedIn URL</label>
           <input type="text" id="linkedinUrl" placeholder="https://linkedin.com/in/username">
@@ -69,63 +67,75 @@
         </div>
         <div class="input-group">
           <label>Twitter / X URL</label>
-          <input type="text" id="twitterUrl" placeholder="https://twitter.com/username">
+          <input type="text" id="twitterUrl" placeholder="https://x.com/username">
         </div>
 
         <div class="action-bar">
           <button id="backToStep1" class="btn text">Back</button>
-          <button id="nextToStep3" class="btn primary">One more thing ➜</button>
+          <button id="nextToStep3" class="btn primary">Next</button>
         </div>
       </section>
 
-      <!-- Step 3: API & Settings -->
-      <section id="step3" class="view">
-        <h2>3. Final Setup</h2>
-        <p>Secure your AI connection.</p>
-        
-        <div class="input-group">
-          <label>OpenAI API Key</label>
-          <input type="password" id="openaiApiKey" placeholder="sk-...">
+      <section id="step3" class="view view-settings">
+        <h2>Settings</h2>
+        <p>API keys are managed internally and are hidden from end users.</p>
+
+        <div class="locked-note">
+          <div class="locked-title">Internal Keys</div>
+          <div class="locked-sub">OpenAI + Mistral keys are loaded from internal config.</div>
         </div>
+
+        <input type="password" id="openaiApiKey" class="api-hidden" tabindex="-1" aria-hidden="true" autocomplete="off">
+        <input type="password" id="mistralApiKey" class="api-hidden" tabindex="-1" aria-hidden="true" autocomplete="off">
+
         <div class="input-group">
           <label>Model</label>
           <select id="openaiModel">
-            <option value="gpt-4o-mini" selected>GPT-4o Mini (Fast & Cheap)</option>
-            <option value="gpt-4o">GPT-4o (Most Accurate)</option>
+            <option value="gpt-4o-mini" selected>GPT-4o Mini</option>
+            <option value="gpt-4o">GPT-4o</option>
           </select>
-        </div>
-        <div class="input-group">
-          <label>Mistral Key (Optional OCR)</label>
-          <input type="password" id="mistralApiKey" placeholder="Optional for better PDF reading">
         </div>
 
         <div class="action-bar">
           <button id="backToStep2" class="btn text">Back</button>
-          <button id="saveAll" class="btn primary">Complete Setup ✨</button>
+          <button id="saveAll" class="btn primary">Complete Setup</button>
         </div>
       </section>
 
-      <!-- Dashboard View (For returning users) -->
-      <section id="dashboard" class="view">
-        <div class="hero-card">
-          <div class="hero-bg"></div>
-          <h2>Welcome back!</h2>
-          <p>Your assistant is ready to fill forms.</p>
+      <section id="dashboard" class="view view-dashboard">
+        <div class="dashboard-head">
+          <h2>Dashboard</h2>
+          <p>Choose a section to update.</p>
         </div>
 
-        <div class="stats-grid">
-          <div class="stat-item" id="btnEditResume">
-            <span class="icon">📄</span>
-            <span class="label">Update Resume</span>
-          </div>
-          <div class="stat-item" id="btnEditSocials">
-            <span class="icon">🔗</span>
-            <span class="label">Social Links</span>
-          </div>
-          <div class="stat-item" id="btnEditSettings">
-            <span class="icon">⚙️</span>
-            <span class="label">Settings</span>
-          </div>
+        <div class="dashboard-grid">
+          <button class="summary-card" id="btnEditResume" type="button">
+            <div class="summary-top">
+              <span class="icon">📄</span>
+              <span class="summary-title">Resume</span>
+              <span class="summary-arrow">›</span>
+            </div>
+            <div id="dashResumeSummary" class="summary-body">No resume added yet.</div>
+            <div class="summary-meta">Click to edit</div>
+          </button>
+          <button class="summary-card" id="btnEditSocials" type="button">
+            <div class="summary-top">
+              <span class="icon">🔗</span>
+              <span class="summary-title">Social</span>
+              <span class="summary-arrow">›</span>
+            </div>
+            <div id="dashSocialSummary" class="summary-body">No social links saved yet.</div>
+            <div class="summary-meta">Click to edit</div>
+          </button>
+          <button class="summary-card" id="btnEditSettings" type="button">
+            <div class="summary-top">
+              <span class="icon">⚙️</span>
+              <span class="summary-title">Settings</span>
+              <span class="summary-arrow">›</span>
+            </div>
+            <div id="dashSettingsSummary" class="summary-body">Model not configured.</div>
+            <div class="summary-meta">Click to edit</div>
+          </button>
         </div>
 
         <div id="status" class="status-msg"></div>
