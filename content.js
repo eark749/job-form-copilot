@@ -168,11 +168,14 @@ function buildContext(el) {
     currentValue: getFieldValue(el).slice(0, 1200)
   };
 
-  if (el.tagName === "SELECT") {
-    ctx.options = Array.from(el.options || [])
-      .map(opt => opt.text.trim())
-      .filter(t => t && !t.toLowerCase().includes("select"));
-  }
+  const labelLower = ctx.fieldLabel.toLowerCase();
+  const nameLower = ctx.name.toLowerCase();
+  const idLower = ctx.id.toLowerCase();
+
+  ctx.isFirstName = labelLower.includes("first") || nameLower.includes("first") || idLower.includes("first");
+  ctx.isLastName = labelLower.includes("last") || nameLower.includes("last") || idLower.includes("last");
+  ctx.isPhone = ctx.fieldType === "tel" || labelLower.includes("phone") || labelLower.includes("mobile");
+  ctx.isEmail = ctx.fieldType === "email" || labelLower.includes("email");
 
   return ctx;
 }
@@ -190,9 +193,9 @@ function getOrCreatePanel() {
     position:fixed; z-index:2147483647;
     width:min(500px, calc(100vw - 20px)); max-height:52vh; overflow:auto;
     background:linear-gradient(155deg,#ffffff 0%,#f3fbf9 100%);
-    border:1px solid #cde0da; border-radius:14px;
+    border:1px solid #cfe2dd; border-radius:14px;
     box-shadow:0 20px 50px rgba(8,70,58,0.2); padding:12px;
-    font-family:'Avenir Next','Trebuchet MS','Segoe UI',sans-serif;
+    font-family:'Avenir Next','Segoe UI',sans-serif;
     color:#153038; display:none;
   `;
   document.documentElement.appendChild(panel);
@@ -224,7 +227,7 @@ function renderPanelLoading(panel) {
   const box = document.createElement("div");
   box.id = LOADING_ID;
   box.style.cssText = "font-size:12px; color:#2e6168;";
-  box.innerText = "Crafting suggestions for this question...";
+  box.innerText = "Crafting suggestions...";
   panel.appendChild(box);
 }
 
@@ -240,20 +243,6 @@ function renderPanelError(panel, message) {
   err.style.cssText = "font-size:12px; color:#a51f1f;";
   err.innerText = message;
   panel.appendChild(err);
-}
-
-function createChip(text, isActive, onClick) {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.innerText = text;
-  btn.style.cssText = `
-    border:${isActive ? "1px solid #0f7666" : "1px solid #cde0da"};
-    background:${isActive ? "#dff3ee" : "#ffffff"};
-    color:#11413a; border-radius:999px; padding:6px 10px;
-    font-size:11px; font-weight:700; cursor:pointer;
-  `;
-  btn.addEventListener("click", onClick);
-  return btn;
 }
 
 function createSuggestionButton(text) {
@@ -276,63 +265,23 @@ function createSuggestionButton(text) {
 
 function renderPanelWithVariants(panel, variants, warning) {
   panel.innerHTML = "";
-
   const title = document.createElement("div");
   title.innerText = "Resume-Based Suggestions";
-  title.style.cssText = "font-size:12px; font-weight:800; letter-spacing:0.02em; margin-bottom:8px; color:#10403a;";
+  title.style.cssText = "font-size:12px; font-weight:800; margin-bottom:8px; color:#10403a;";
   panel.appendChild(title);
 
-  const toneRow = document.createElement("div");
-  toneRow.style.cssText = "display:flex; gap:6px; margin-bottom:10px;";
-  panel.appendChild(toneRow);
-
-  const listWrap = document.createElement("div");
-  panel.appendChild(listWrap);
-
-  const tones = ["concise", "balanced", "detailed"];
-
-  function paintList() {
-    listWrap.innerHTML = "";
-    const suggestions = variants[activeTone] || [];
-    for (const suggestion of suggestions) {
-      listWrap.appendChild(createSuggestionButton(suggestion));
-    }
-    if (!suggestions.length) {
-      const empty = document.createElement("div");
-      empty.style.cssText = "font-size:12px; color:#7c5f00;";
-      empty.innerText = "No suggestions available for this style.";
-      listWrap.appendChild(empty);
-    }
-    if (warning) {
-      const warn = document.createElement("div");
-      warn.style.cssText = "font-size:11px; color:#7c5f00; margin-top:2px;";
-      warn.innerText = warning;
-      listWrap.appendChild(warn);
-    }
+  const suggestions = variants[activeTone] || variants.balanced || [];
+  for (const suggestion of suggestions) {
+    if (suggestion) panel.appendChild(createSuggestionButton(suggestion));
   }
-
-  function paintChips() {
-    toneRow.innerHTML = "";
-    for (const tone of tones) {
-      const label = tone === "concise" ? "Concise" : tone === "balanced" ? "Balanced" : "Detailed";
-      toneRow.appendChild(
-        createChip(label, activeTone === tone, () => {
-          activeTone = tone;
-          paintChips();
-          paintList();
-        })
-      );
-    }
+  if (warning) {
+    const w = document.createElement("div");
+    w.style.cssText = "font-size:10px; opacity:0.6; margin-top:4px;";
+    w.innerText = warning;
+    panel.appendChild(w);
   }
-
-  if (!tones.includes(activeTone)) activeTone = "balanced";
-  paintChips();
-  paintList();
 }
 
-/* ─────────────────────────────────────────────────────────────────
-   SUGGESTION REQUEST (for focus-based panel)
-───────────────────────────────────────────────────────────────── */
 async function refreshAssistantEnabledIfNeeded(force = false) {
   if (!globalThis.chrome?.storage?.local) return;
   const now = Date.now();
@@ -346,10 +295,8 @@ async function refreshAssistantEnabledIfNeeded(force = false) {
 async function requestSuggestions(el) {
   if (isAutoFilling) return;
   await refreshAssistantEnabledIfNeeded();
-  if (!assistantStateLoaded || !assistantEnabled) {
-    hidePanel();
-    return;
-  }
+  if (!assistantEnabled) return;
+
   const panel = getOrCreatePanel();
   activeElement = el;
   positionPanel(panel, el);
@@ -359,45 +306,16 @@ async function requestSuggestions(el) {
   renderPanelLoading(panel);
 
   const context = buildContext(el);
-  console.log("[JobFormAI] sending field context", {
-    requestId,
-    field: context.fieldLabel || context.placeholder || context.name || "unknown",
-    fieldType: context.fieldType,
-    url: context.url
-  });
-
-  if (!globalThis.chrome || !chrome.runtime || typeof chrome.runtime.sendMessage !== "function") {
-    renderPanelError(panel, "Extension runtime unavailable on this page. Try a job application tab.");
-    return;
-  }
-
-  const timeoutId = setTimeout(() => {
-    if (requestId !== requestCounter) return;
-    renderPanelError(panel, "Timed out waiting for assistant response. Try again.");
-  }, REQUEST_TIMEOUT_MS);
-
   chrome.runtime.sendMessage({ type: "GENERATE_SUGGESTIONS", context, requestId }, (response) => {
-    clearTimeout(timeoutId);
-    if (requestId !== requestCounter || isAutoFilling) return;
-    if (!assistantEnabled) { hidePanel(); return; }
-
-    if (chrome.runtime.lastError) {
-      renderPanelError(panel, `Extension messaging error: ${chrome.runtime.lastError.message}`);
-      return;
-    }
+    if (requestId !== requestCounter) return;
     if (!response || !response.ok) {
-      renderPanelError(panel, response?.error || "Unable to generate suggestions.");
+      renderPanelError(panel, response?.error || "Error generating suggestions.");
       return;
     }
-
-    const variants = response.variants || {};
-    renderPanelWithVariants(panel, variants, response.warning || "");
+    renderPanelWithVariants(panel, response.variants || {}, response.warning);
   });
 }
 
-/* ─────────────────────────────────────────────────────────────────
-   AUTO-FILL OVERLAY
-───────────────────────────────────────────────────────────────── */
 function showAutoFillOverlay(message, progress, total) {
   let overlay = document.getElementById(AUTOFILL_OVERLAY_ID);
   if (!overlay) {
@@ -407,301 +325,139 @@ function showAutoFillOverlay(message, progress, total) {
       position:fixed; bottom:80px; right:20px; z-index:2147483646;
       background:linear-gradient(135deg,#0f2027,#1a4a3c);
       color:#ffffff; border-radius:14px; padding:14px 18px;
-      font-family:'Avenir Next','Segoe UI',sans-serif;
-      font-size:13px; box-shadow:0 8px 30px rgba(0,0,0,0.4);
-      min-width:220px; max-width:300px;
-      border:1px solid rgba(255,255,255,0.1);
-      transition: opacity 0.3s;
+      font-family:sans-serif; font-size:13px; box-shadow:0 8px 30px rgba(0,0,0,0.4);
+      min-width:220px; border:1px solid rgba(255,255,255,0.1);
     `;
     document.documentElement.appendChild(overlay);
   }
-
   const pct = total > 0 ? Math.round((progress / total) * 100) : 0;
   overlay.innerHTML = `
-    <div style="font-weight:700; margin-bottom:6px; color:#7fffd4;">✨ Auto-filling</div>
-    <div style="font-size:12px; opacity:0.85; margin-bottom:8px;">${message}</div>
-    <div style="background:rgba(255,255,255,0.15); border-radius:999px; height:6px; overflow:hidden;">
-      <div style="background:#3dffa0; height:100%; width:${pct}%; border-radius:999px; transition:width 0.3s;"></div>
+    <div style="font-weight:700; color:#7fffd4; margin-bottom:6px;">✨ Auto-filling</div>
+    <div style="font-size:12px; margin-bottom:8px;">${message}</div>
+    <div style="background:rgba(255,255,255,0.1); height:6px; border-radius:9px; overflow:hidden;">
+      <div style="background:#3dffa0; height:100%; width:${pct}%;"></div>
     </div>
-    <div style="font-size:11px; margin-top:6px; opacity:0.6;">${progress} / ${total} fields</div>
   `;
   overlay.style.display = "block";
 }
 
 function hideAutoFillOverlay() {
   const overlay = document.getElementById(AUTOFILL_OVERLAY_ID);
-  if (!overlay) return;
-  overlay.style.opacity = "0";
-  setTimeout(() => { if (overlay) overlay.remove(); }, 400);
+  if (overlay) overlay.remove();
 }
 
-/* ─────────────────────────────────────────────────────────────────
-   SILENT FIELD FILL (no panel shown)
-───────────────────────────────────────────────────────────────── */
 function silentFillField(el, tone = "balanced") {
   return new Promise((resolve) => {
-    if (!globalThis.chrome?.runtime?.sendMessage) { resolve(null); return; }
-
     const context = buildContext(el);
-    const timeoutId = setTimeout(() => resolve(null), REQUEST_TIMEOUT_MS);
-    const silentRequestId = Date.now() + Math.floor(Math.random() * 1000);
-
-    chrome.runtime.sendMessage(
-      { type: "GENERATE_SUGGESTIONS", context, requestId: silentRequestId, silent: true },
-      (response) => {
-        clearTimeout(timeoutId);
-        if (chrome.runtime?.lastError || !response?.ok) { 
-          console.warn("[JobFormAI] silentFillField failed for", context.fieldLabel, response?.error || "");
-          resolve(null); 
-          return; 
-        }
-
-        const variants = response.variants || {};
-        const suggestions = variants[tone] || variants.balanced || variants.concise || [];
-        const best = suggestions[0] || null;
-        
-        console.log(`[JobFormAI] AI Suggested for "${context.fieldLabel}":`, best);
-        
-        if (best) setFieldValue(el, best, { avoidFocus: true });
-        resolve(best);
+    const silentRequestId = Date.now() + Math.floor(Math.random()*1000);
+    
+    chrome.runtime.sendMessage({ type: "GENERATE_SUGGESTIONS", context, requestId: silentRequestId }, (response) => {
+      if (!response?.ok) { resolve(null); return; }
+      
+      const variants = response.variants || {};
+      const suggestions = variants[tone] || variants.balanced || [];
+      const best = suggestions[0] || null;
+      
+      // Narrative shield for factual fields
+      const isFact = context.isFirstName || context.isLastName || context.isPhone || context.isEmail || context.isLinkedIn;
+      if (isFact && best && best.length > 70 && best.includes(" ")) {
+        console.warn("[JobFormAI] Blocking narrative text in fact field");
+        resolve(null);
+        return;
       }
-    );
+
+      if (best) setFieldValue(el, best, { avoidFocus: true });
+      resolve(best);
+    });
   });
 }
 
-/* ─────────────────────────────────────────────────────────────────
-   AUTO-FILL PAGE
-───────────────────────────────────────────────────────────────── */
 async function autoFillPage() {
   await refreshAssistantEnabledIfNeeded();
-  if (!assistantEnabled) {
-    alert("Job Form AI: Please enable the assistant from the extension popup first.");
-    return;
-  }
+  if (!assistantEnabled) { alert("Enable Assistant first."); return; }
 
-  // Collect all fillable fields that are empty (or allow override)
-  const allFields = Array.from(
-    document.querySelectorAll('input, textarea, select, [contenteditable="true"]')
-  ).filter((el) => {
-    if (!isSupportedField(el)) return false;
-    if (!el.offsetParent && el.tagName !== "SELECT") return false; // skip hidden
-    const val = getFieldValue(el).trim();
-    // Skip fields that already have a value (don't override user's work)
-    // For select, skip if a non-default option is chosen
-    if (el.tagName === "SELECT") return el.selectedIndex <= 0;
-    return val.length === 0;
-  });
+  const allFields = Array.from(document.querySelectorAll('input, textarea, select, [contenteditable="true"]'))
+    .filter(el => {
+      if (!isSupportedField(el)) return false;
+      if (!el.offsetParent && el.tagName !== "SELECT") return false;
+      if (el.tagName === "SELECT") return el.selectedIndex <= 0;
+      return getFieldValue(el).trim().length === 0;
+    });
 
-  if (allFields.length === 0) {
-    alert("No empty fillable fields found on this page.");
-    return;
-  }
+  if (allFields.length === 0) { alert("No empty fields."); return; }
 
-  // Disable the auto-fill button during operation
   const btn = document.getElementById(AUTOFILL_BTN_ID);
-  if (btn) {
-    btn.disabled = true;
-    btn.innerText = "⏳ Filling...";
-  }
+  if (btn) { btn.disabled = true; btn.innerText = "⏳ Filling..."; }
 
-  hidePanel();
   isAutoFilling = true;
-  requestCounter += 1;
+  requestCounter++;
 
   try {
     let filled = 0;
     for (let i = 0; i < allFields.length; i++) {
         const el = allFields[i];
-        const label = findLabelText(el) || el.getAttribute("placeholder") || el.getAttribute("name") || `Field ${i + 1}`;
-        showAutoFillOverlay(`Filling: ${label.slice(0, 45)}`, i, allFields.length);
-
-        await silentFillField(el, activeTone);
-        filled++;
-
-        // Small delay so we don't hammer the API
-        await new Promise((r) => setTimeout(r, 300));
+        const label = findLabelText(el) || el.placeholder || "Field " + (i+1);
+        showAutoFillOverlay(`Filling: ${label.slice(0,30)}`, i, allFields.length);
+        const res = await silentFillField(el);
+        if (res) filled++;
+        await new Promise(r => setTimeout(r, 200));
     }
-
     showAutoFillOverlay(`Done! ${filled} fields filled.`, allFields.length, allFields.length);
-    setTimeout(hideAutoFillOverlay, 2500);
+    if (btn) btn.innerHTML = `✅ Filled ${filled}`;
+    setTimeout(() => {
+      hideAutoFillOverlay();
+      if (btn) { btn.disabled = false; btn.innerText = "✨ Auto-fill"; }
+    }, 2500);
   } finally {
     isAutoFilling = false;
-    if (btn) {
-        btn.disabled = false;
-        btn.innerText = "✨ Auto-fill";
-    }
   }
 }
 
-
-/* ─────────────────────────────────────────────────────────────────
-   FLOATING AUTO-FILL BUTTON
-───────────────────────────────────────────────────────────────── */
 function injectAutoFillButton() {
   if (document.getElementById(AUTOFILL_BTN_ID)) return;
-
   const btn = document.createElement("button");
   btn.id = AUTOFILL_BTN_ID;
   btn.innerText = "✨ Auto-fill";
-  btn.title = "Auto-fill all empty fields on this page using your resume";
   btn.style.cssText = `
     position:fixed; bottom:20px; right:20px; z-index:2147483647;
     background:linear-gradient(135deg,#0d7a5f,#0f5e48);
-    color:#ffffff; border:none; border-radius:999px;
-    padding:10px 18px; font-size:13px; font-weight:700;
-    font-family:'Avenir Next','Segoe UI',sans-serif;
-    cursor:pointer !important; box-shadow:0 4px 20px rgba(13,122,95,0.5);
-    transition:transform 0.15s, box-shadow 0.15s;
-    display:flex; align-items:center; gap:6px;
-    pointer-events: auto !important;
+    color:white; border:none; border-radius:999px; padding:10px 18px;
+    font-size:13px; font-weight:700; cursor:pointer;
+    box-shadow:0 4px 20px rgba(0,0,0,0.3);
   `;
-
-
-  btn.addEventListener("mouseenter", () => {
-    btn.style.transform = "scale(1.05)";
-    btn.style.boxShadow = "0 6px 28px rgba(13,122,95,0.7)";
-  });
-  btn.addEventListener("mouseleave", () => {
-    btn.style.transform = "scale(1)";
-    btn.style.boxShadow = "0 4px 20px rgba(13,122,95,0.5)";
-  });
-  btn.addEventListener("click", () => {
-    autoFillPage().catch((err) => console.error("[JobFormAI] autoFillPage error", err));
-  });
-
-  const parent = document.body || document.documentElement;
-  if (parent) {
-    parent.appendChild(btn);
-    console.log("[JobFormAI] Autofill button injected into", parent.tagName);
-    updateAutoFillButtonVisibility();
-  } else {
-    console.error("[JobFormAI] Could not find parent to inject button.");
-  }
+  btn.addEventListener("click", () => autoFillPage());
+  document.body?.appendChild(btn);
+  updateAutoFillButtonVisibility();
 }
-
 
 function updateAutoFillButtonVisibility() {
   const btn = document.getElementById(AUTOFILL_BTN_ID);
-  if (!btn) return;
-  btn.style.setProperty("display", assistantEnabled ? "flex" : "none", "important");
+  if (btn) btn.style.display = assistantEnabled ? "block" : "none";
 }
 
-
-/* ─────────────────────────────────────────────────────────────────
-   FOCUS / POINTER EVENTS
-───────────────────────────────────────────────────────────────── */
-function onFocusLike(event) {
-  if (isAutoFilling) return;
-  const rawTarget = event.composedPath?.()[0] || event.target;
-  const target = rawTarget instanceof Element ? rawTarget : null;
-  if (!target || !isSupportedField(target)) return;
-  if (target === activeElement) return;
-  requestSuggestions(target).catch((error) => {
-    console.error("[JobFormAI] requestSuggestions failed", error);
-  });
-}
-
-function onPointerDown(event) {
-  const panel = document.getElementById(PANEL_ID);
-  if (!panel || panel.style.display === "none") return;
-
-  const target = event.composedPath?.()[0] || event.target;
-  const clickedPanel = target instanceof Node && panel.contains(target);
-  const clickedField = target === activeElement;
-  const clickedBtn = target instanceof Node && document.getElementById(AUTOFILL_BTN_ID)?.contains(target);
-
-  if (!clickedPanel && !clickedField && !clickedBtn) hidePanel();
-}
-
-/* ─────────────────────────────────────────────────────────────────
-   SHADOW DOM + MUTATION OBSERVER
-───────────────────────────────────────────────────────────────── */
-function bindRootListeners(root) {
-  if (!root || boundRoots.has(root)) return;
-  boundRoots.add(root);
-  root.addEventListener("focusin", onFocusLike, true);
-  root.addEventListener("mousedown", onPointerDown, true);
-}
-
-function bindOpenShadowRoots(node) {
-  if (!node || !(node instanceof Element)) return;
-  if (node.shadowRoot && node.shadowRoot.mode === "open") {
-    bindRootListeners(node.shadowRoot);
-    node.shadowRoot.querySelectorAll("*").forEach((child) => bindOpenShadowRoots(child));
-  }
-  node.querySelectorAll?.("*").forEach((child) => {
-    if (child.shadowRoot && child.shadowRoot.mode === "open") {
-      bindRootListeners(child.shadowRoot);
-    }
-  });
-}
-
-/* ─────────────────────────────────────────────────────────────────
-   INIT
-───────────────────────────────────────────────────────────────── */
 function init() {
   if (!/^(https?|file):$/.test(location.protocol)) return;
+  document.addEventListener("focusin", (e) => {
+    const t = e.target;
+    if (isSupportedField(t)) requestSuggestions(t);
+  }, true);
+  document.addEventListener("mousedown", (e) => {
+    const p = document.getElementById(PANEL_ID);
+    if (p && !p.contains(e.target) && e.target !== activeElement) hidePanel();
+  }, true);
 
-  bindRootListeners(document);
-  bindOpenShadowRoots(document.documentElement);
-  
-  // Try injecting button immediately and also after a short delay
   injectAutoFillButton();
-  setTimeout(injectAutoFillButton, 1000);
-  setTimeout(injectAutoFillButton, 3000);
+  setTimeout(injectAutoFillButton, 2000);
 
-
-  if (globalThis.chrome?.storage?.local) {
-    refreshAssistantEnabledIfNeeded(true).then(() => {
+  if (globalThis.chrome?.storage) {
+    refreshAssistantEnabledIfNeeded(true).then(() => updateAutoFillButtonVisibility());
+    chrome.storage.onChanged.addListener((changes) => {
+      if (changes.assistantEnabled) {
+        assistantEnabled = changes.assistantEnabled.newValue === true;
         updateAutoFillButtonVisibility();
-    }).catch((error) => {
-      console.error("[JobFormAI] assistant toggle load failed", error);
-    });
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== "local" || !Object.prototype.hasOwnProperty.call(changes, "assistantEnabled")) return;
-      assistantEnabled = changes.assistantEnabled.newValue === true;
-      assistantStateLoaded = true;
-      assistantStateLastSyncMs = Date.now();
-      updateAutoFillButtonVisibility();
-      if (!assistantEnabled) {
-        requestCounter += 1;
-        hidePanel();
       }
     });
   }
-
-  if (globalThis.chrome?.runtime?.onMessage) {
-    chrome.runtime.onMessage.addListener((message) => {
-      if (message?.type !== "SUGGESTION_STREAM_PROGRESS") return false;
-      const incomingRequestId = Number(message.requestId || 0);
-      if (incomingRequestId !== requestCounter) return false;
-      const detail = String(message.detail || "");
-      if (!detail) return false;
-      updateLoadingText(detail);
-      return false;
-    });
-  }
-
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      for (const added of mutation.addedNodes) {
-        if (added instanceof Element) bindOpenShadowRoots(added);
-      }
-    }
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-
-  window.addEventListener("scroll", () => {
-    const panel = document.getElementById(PANEL_ID);
-    if (!panel || panel.style.display === "none" || !activeElement) return;
-    positionPanel(panel, activeElement);
-  });
-
-  window.addEventListener("resize", () => {
-    const panel = document.getElementById(PANEL_ID);
-    if (!panel || panel.style.display === "none" || !activeElement) return;
-    positionPanel(panel, activeElement);
-  });
 }
 
 init();
